@@ -157,6 +157,16 @@ proc LLVMAddIncoming*(PhiNode: LLVMValueRef,
                       Count: cuint)
   {.cdecl, importc: "LLVMAddIncoming".}
 
+# --- call-related ---
+proc LLVMGetNamedFunction*(M: LLVMModuleRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMGetNamedFunction".}
+proc LLVMGetParam*(Fn: LLVMValueRef, Index: cuint): LLVMValueRef
+  {.cdecl, importc: "LLVMGetParam".}
+proc LLVMBuildCall2*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,
+                     Fn: LLVMValueRef, Args: ptr LLVMValueRef,
+                     NumArgs: cuint, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildCall2".}
+
 # --- verification ---
 proc LLVMVerifyModule*(M: LLVMModuleRef,
                        Action: LLVMVerifierFailureAction,

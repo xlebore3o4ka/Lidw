@@ -8,6 +8,7 @@ import ./llvm_c
 type
   CodegenCtx = object
     ctx: LLVMContextRef
+    module: LLVMModuleRef
     builder: LLVMBuilderRef
     mainFn: LLVMValueRef
     i64: LLVMTypeRef
@@ -197,6 +198,38 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
         let lhs = emitOperand(c, n.left, targetKind)
         let rhs = emitOperand(c, n.right, targetKind)
         LLVMBuildICmp(c.builder, cmpPredicate(n.op, targetKind), lhs, rhs, "cmp")
+  of nkCall:
+    # <NOTE>#91: callee is nkIdent (fn-as-value is out of scope in v1).
+    # Args are coerced to each parameter's kind; ret type is n.typ.
+    if n.callee.kind != nkIdent:
+      raise newException(ValueError,
+        "codegen: call on non-ident not supported yet")
+    let fnName = n.callee.identName
+    let fnVal = LLVMGetNamedFunction(c.module, fnName.cstring)
+    if fnVal == nil:
+      raise newException(ValueError,
+        "codegen: unknown function: " & fnName)
+    if n.callee.typ == nil or n.callee.typ.kind != tyFn:
+      raise newException(ValueError,
+        "codegen: call callee without tyFn type")
+    let fnT = n.callee.typ
+    var argVals: seq[LLVMValueRef] = @[]
+    for i, a in n.args:
+      argVals.add emitOperand(c, a, fnT.fnParams[i].kind)
+    var paramTys: seq[LLVMTypeRef] = @[]
+    for pt in fnT.fnParams:
+      paramTys.add llvmIntType(c, pt.kind)
+    let retTy = llvmIntType(c, fnT.fnRet.kind)
+    let llvmFnTy =
+      if paramTys.len == 0:
+        LLVMFunctionType(retTy, nil, 0, 0)
+      else:
+        LLVMFunctionType(retTy, addr paramTys[0], cuint(paramTys.len), 0)
+    if argVals.len == 0:
+      LLVMBuildCall2(c.builder, llvmFnTy, fnVal, nil, 0, "call")
+    else:
+      LLVMBuildCall2(c.builder, llvmFnTy, fnVal, addr argVals[0],
+                     cuint(argVals.len), "call")
   of nkCast:
     # <NOTE>#76: cast dispatch on (source kind, target kind). iLit is
     # folded at the target width, no IR instruction emitted. Concrete
@@ -321,8 +354,8 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   ## expr (for main's return), nil for declarative statements.
   case n.kind
   of nkDecl:
-    # <NOTE>#82: fn decls are registered by sema but not emitted by
-    # codegen in Fa. Fd will emit `define iN @f(...)`. Return nil here.
+    # <NOTE>#82: fn decls are emitted by emitFn (pass 1 of emitModule),
+    # not as statements. Return nil here.
     if n.typ != nil and n.typ.kind == tyFn:
       return nil
     doAssert n.typ != nil, "codegen: decl without sema type"
@@ -374,7 +407,7 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
           $n.assignValue.typ.kind & " -> " & $n.typ.kind)
     discard LLVMBuildStore(c.builder, val, slot)
     nil
-  of nkInt, nkIdent, nkUnary, nkBinOp:
+  of nkInt, nkIdent, nkUnary, nkBinOp, nkCast, nkCall:
     emitExpr(c, n)
   of nkBlock:
     # <NOTE>#51: value-block delegates to emitExpr so `is` yields.
@@ -424,6 +457,44 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     raise newException(ValueError,
       "codegen: unsupported statement: " & $n.kind)
 
+proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef =
+  var paramTys: seq[LLVMTypeRef] = @[]
+  for pt in fnT.fnParams:
+    paramTys.add llvmIntType(c, pt.kind)
+  let retTy = llvmIntType(c, fnT.fnRet.kind)
+  if paramTys.len == 0:
+    LLVMFunctionType(retTy, nil, 0, 0)
+  else:
+    LLVMFunctionType(retTy, addr paramTys[0], cuint(paramTys.len), 0)
+
+proc emitFnBody(c: var CodegenCtx, decl: Node) =
+  ## <NOTE>#92: params are bound through alloca+store so they behave
+  ## like local vars inside the body (uniform with let). Params are
+  ## immutable in sema; Fa.7 will honor `$` mutability.
+  let fnVal = LLVMGetNamedFunction(c.module, decl.declName.cstring)
+  if fnVal == nil:
+    raise newException(ValueError,
+      "codegen: fn not pre-registered: " & decl.declName)
+  let entry = LLVMAppendBasicBlockInContext(c.ctx, fnVal, "entry")
+  LLVMPositionBuilderAtEnd(c.builder, entry)
+  let savedMain = c.mainFn
+  c.mainFn = fnVal
+  c.scopes.add initTable[string, LLVMValueRef]()
+  c.varTypes.add initTable[string, LLVMTypeRef]()
+  for i, p in decl.declTypeNode.fnParams:
+    let ty = llvmIntType(c, decl.typ.fnParams[i].kind)
+    let paramVal = LLVMGetParam(fnVal, cuint(i))
+    let nameC = if p.paramName.len > 0: p.paramName.cstring else: "arg".cstring
+    let slot = LLVMBuildAlloca(c.builder, ty, nameC)
+    discard LLVMBuildStore(c.builder, paramVal, slot)
+    if p.paramName.len > 0:
+      c.defineVar(p.paramName, slot, ty)
+  let bodyVal = emitExpr(c, decl.declInit)
+  discard LLVMBuildRet(c.builder, bodyVal)
+  c.scopes.setLen(c.scopes.len - 1)
+  c.varTypes.setLen(c.varTypes.len - 1)
+  c.mainFn = savedMain
+
 proc emitModule*(program: Node): string =
   ## Lower the program and return textual LLVM IR.
   ## <TODO>#39: temporary semantics — main returns the last value
@@ -438,20 +509,33 @@ proc emitModule*(program: Node): string =
 
   let i64 = LLVMInt64TypeInContext(ctx)
   let i1 = LLVMInt1TypeInContext(ctx)
-  let fnTy = LLVMFunctionType(i64, nil, 0, 0)
-  let mainFn = LLVMAddFunction(llmod, "main", fnTy)
-  let entry = LLVMAppendBasicBlockInContext(ctx, mainFn, "entry")
-  LLVMPositionBuilderAtEnd(builder, entry)
+  let mainTy = LLVMFunctionType(i64, nil, 0, 0)
+  let mainFn = LLVMAddFunction(llmod, "main", mainTy)
+  let mainEntry = LLVMAppendBasicBlockInContext(ctx, mainFn, "entry")
 
-  var c = CodegenCtx(ctx: ctx, builder: builder, mainFn: mainFn,
-                     i64: i64, i1: i1,
+  var c = CodegenCtx(ctx: ctx, module: llmod, builder: builder,
+                     mainFn: mainFn, i64: i64, i1: i1,
                      scopes: @[initTable[string, LLVMValueRef]()],
                      varTypes: @[initTable[string, LLVMTypeRef]()])
 
+  # <NOTE>#93: three passes. 1: declare all fns. 2: emit fn bodies.
+  # 3: emit main body. LLVM reorders definitions as it likes.
+  if program.kind == nkProgram:
+    for stmt in program.stmts:
+      if stmt.kind == nkDecl and stmt.typ != nil and stmt.typ.kind == tyFn:
+        let llvmFnTy = fnLLVMType(c, stmt.typ)
+        discard LLVMAddFunction(llmod, stmt.declName.cstring, llvmFnTy)
+    for stmt in program.stmts:
+      if stmt.kind == nkDecl and stmt.typ != nil and stmt.typ.kind == tyFn:
+        emitFnBody(c, stmt)
+
+  LLVMPositionBuilderAtEnd(builder, mainEntry)
   var retVal: LLVMValueRef = nil
   var retType: LidwType = nil
   if program.kind == nkProgram:
     for stmt in program.stmts:
+      if stmt.kind == nkDecl and stmt.typ != nil and stmt.typ.kind == tyFn:
+        continue
       let v = emitStmt(c, stmt)
       if v != nil:
         retVal = v

@@ -115,6 +115,7 @@ pkgs/
 /compiler/compiler/
 
 ### mine ###
+!VERSION
 allfiles.txt
 changes.txt
 secrets.nim

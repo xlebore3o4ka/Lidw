@@ -1,8 +1,10 @@
+import std/strutils
+
 # Package
 
-version       = "0.1.0"
-author        = "xlebore3o4ka"
-description   = "-"
+version       = readFile("VERSION").strip()
+author        = "xlebore3o4ka & DeepSeek"
+description   = "LIDW - the Language that I Didn't Write"
 license       = "AGPL-3.0"
 srcDir        = "src"
 binDir        = "bin"

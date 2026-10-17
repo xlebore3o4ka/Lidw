@@ -44,10 +44,6 @@ not yet started:
   loops exist this must move to the function entry block
   (TODO#41).
 
-## Comments
-
-No comment syntax yet. No `//`, no `/* */`, no `#`.
-
 ## Strings, chars
 
 No string or char literals.

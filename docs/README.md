@@ -17,7 +17,7 @@ build actually understands.
 | `if`/`elif`/`else` |   ok   |  ok   |  partial|
 | `is`               |   ok   |  ok   |  partial|
 | Functions          |   —    |  —    |   —     |
-| Comments           |   —    |  —    |   —     |
+| Comments           |   ok   |  ok   |   ok    |
 | Strings            |   —    |  —    |   —     |
 | Floats             |   ok   |  —    |   —     |
 
@@ -27,6 +27,10 @@ with `lekSema`.
 Codegen *partial*: `lidw build '<src>'` emits LLVM IR that compiles
 and runs, but some semantics are temporary or missing (see
 [codegen.md](codegen.md)).
+
+Comments are lexer-only: the lexer strips them as trivia, so the
+parser, sema, and codegen never see them. All three columns are
+marked *ok* because there is nothing for them to do.
 
 ## Documents
 

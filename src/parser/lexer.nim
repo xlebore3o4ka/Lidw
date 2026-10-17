@@ -136,6 +136,7 @@ proc lexAll*(src: string): seq[Token] =
       else:
         result.add Token(kind: tkEquals, line: startLine, col: startCol)
     of ';': l.adv(); result.add Token(kind: tkSemicolon, line: startLine, col: startCol)
+    of ',': l.adv(); result.add Token(kind: tkComma,     line: startLine, col: startCol)
     # <NOTE>#25: '!' + '=' adjacent lexes as tkBangEq; 'Int x! = 5' needs
     # a space between ! and = to mean immutable-with-init.
     of '!':

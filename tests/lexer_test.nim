@@ -189,6 +189,11 @@ suite "lexer":
     check ts[3].kind == tkIdent
     check ts[4].kind == tkEOF
 
+  test "comma token":
+    let ts = lexAll("a, b")
+    check ts[1].kind == tkComma
+    check ts[3].kind == tkEOF
+
   test "as is a keyword":
     check lexAll("as")[0].kind == tkAs
     check lexAll("As")[0].kind == tkType

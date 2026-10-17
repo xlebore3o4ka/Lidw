@@ -132,15 +132,67 @@ proc parse*(tokens: seq[Token]): Node =
     raise lidwError(lekParse, "unexpected token after expression: " & $trailing,
                     trailing.line, trailing.col)
 
-# <NOTE>#77: parseType handles a single type-expression. Today it is
-# just `tkType -> nkTypeName`. Function types T(A, B) land in Fa.2.
+# <NOTE>#77: type-expression grammar.
+#   type   ::= tkType [ '(' [param {',' param}] ')' ]
+#   param  ::= type [tkIdent [mutpostfix]]
+#   mutpostfix ::= '!' | '$'
+# `T` alone -> nkTypeName. `T(A, B)` -> nkFnType with params.
+proc parseType(p: var Parser): Node
+
+proc parseParam(p: var Parser): Node =
+  let ty = parseType(p)
+  var name = ""
+  var mut = muImmutable
+  var endLine = ty.line
+  var endCol = ty.col
+  if p.peek().kind == tkIdent:
+    let nameTok = p.peek()
+    p.advance()
+    name = nameTok.word
+    endLine = nameTok.line
+    endCol = nameTok.col
+    if p.peek().kind == tkBang:
+      let mTok = p.peek()
+      mut = muImmutable
+      endLine = mTok.line
+      endCol = mTok.col
+      p.advance()
+    elif p.peek().kind == tkDollar:
+      let mTok = p.peek()
+      mut = muMutable
+      endLine = mTok.line
+      endCol = mTok.col
+      p.advance()
+  Node(kind: nkParam, paramType: ty, paramName: name, paramMut: mut,
+       line: endLine, col: endCol)
+
 proc parseType(p: var Parser): Node =
   let t = p.peek()
   if t.kind != tkType:
     raise lidwError(lekParse,
       "expected type, got " & $t, t.line, t.col)
   p.advance()
-  Node(kind: nkTypeName, typeName: t.word, line: t.line, col: t.col)
+  if p.peek().kind != tkLParen:
+    return Node(kind: nkTypeName, typeName: t.word, line: t.line, col: t.col)
+  # function type T(A, B)
+  p.advance()
+  var params: seq[Node] = @[]
+  while true:
+    if p.peek().kind == tkRParen: break
+    params.add parseParam(p)
+    if p.peek().kind == tkComma:
+      p.advance()
+      continue
+    break
+  let closing = p.peek()
+  if closing.kind != tkRParen:
+    raise lidwError(lekParse,
+      "expected ')' in function type, got " & $closing,
+      closing.line, closing.col)
+  p.advance()
+  let ret = Node(kind: nkTypeName, typeName: t.word, line: t.line, col: t.col)
+  Node(kind: nkFnType, fnRet: ret, fnParams: params,
+       line: t.line, col: t.col)
 
 proc parseDecl(p: var Parser): Node =
   let typeTok = p.peek()

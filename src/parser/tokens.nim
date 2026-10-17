@@ -29,6 +29,7 @@ type
     tkElse       ## else
     tkIs         ## is
     tkAs         ## as (cast)
+    tkComma      ## ,
     tkEOF        ## end of input
 
   Token* = object
@@ -68,4 +69,5 @@ proc `$`*(t: Token): string =
     of tkElse:    "tkElse"
     of tkIs:      "tkIs"
     of tkAs:      "tkAs"
+    of tkComma:   "tkComma"
     of tkEOF:     "tkEOF"

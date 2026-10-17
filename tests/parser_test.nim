@@ -35,6 +35,44 @@ suite "parser":
     check d.declInit != nil
     check d.declInit.kind == nkInt and d.declInit.intVal == 10
 
+  test "function type in decl parses":
+    let n = p("Int(Int a) f = a + 1")
+    check n.stmts.len == 1
+    let d = n.stmts[0]
+    check d.kind == nkDecl
+    check d.declName == "f"
+    check d.declTypeNode.kind == nkFnType
+    check d.declTypeNode.fnRet.kind == nkTypeName
+    check d.declTypeNode.fnRet.typeName == "Int"
+    check d.declTypeNode.fnParams.len == 1
+    check d.declTypeNode.fnParams[0].kind == nkParam
+    check d.declTypeNode.fnParams[0].paramName == "a"
+    check d.declTypeNode.fnParams[0].paramMut == muImmutable
+    check d.declTypeNode.fnParams[0].paramType.kind == nkTypeName
+
+  test "function type with two params":
+    let n = p("Int(Int a, Int b) add = a + b")
+    check n.stmts[0].declTypeNode.fnParams.len == 2
+
+  test "function type with mutable param":
+    let n = p("Nul(Int a$) inc = a")
+    check n.stmts[0].declTypeNode.fnParams[0].paramMut == muMutable
+
+  test "function type with unnamed params":
+    let n = p("Int(Int, Int) g = 0")
+    check n.stmts[0].declTypeNode.fnParams.len == 2
+    check n.stmts[0].declTypeNode.fnParams[0].paramName == ""
+    check n.stmts[0].declTypeNode.fnParams[1].paramName == ""
+
+  test "function type with nested fn type":
+    let n = p("Int(Int(Int) f) g = 0")
+    let p0 = n.stmts[0].declTypeNode.fnParams[0]
+    check p0.paramType.kind == nkFnType
+    check p0.paramType.fnParams.len == 1
+
+  test "function type trailing comma is parse error":
+    check expectParse("Int(Int a,) f = a") == lekParse
+
   test "decl has typeNode":
     let n = p("Int x = 10")
     check n.stmts[0].kind == nkDecl

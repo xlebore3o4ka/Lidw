@@ -22,6 +22,8 @@ proc visit*[V](v: var V, n: Node) =
   of nkIs:     v.visitIs(n)
   of nkCast:   v.visitCast(n)
   of nkTypeName: v.visitTypeName(n)
+  of nkFnType: v.visitFnType(n)
+  of nkParam:  v.visitParam(n)
 
 when isMainModule:
   # smoke: prove dispatch type-checks; no real visitor yet.
@@ -39,6 +41,8 @@ when isMainModule:
   proc visitIs*(v: var Noop, n: Node) = discard
   proc visitCast*(v: var Noop, n: Node) = discard
   proc visitTypeName*(v: var Noop, n: Node) = discard
+  proc visitFnType*(v: var Noop, n: Node) = discard
+  proc visitParam*(v: var Noop, n: Node) = discard
   var v: Noop
   let n = Node(kind: nkInt, intVal: 1)
   visit(v, n)

@@ -96,7 +96,7 @@ A block with type `Int` or `Bool` is a value-block. It opens a
 scope, emits all statements, and yields the value of `is`:
 
 ```
-Int x = (Int y = 10; is y); x    # x = y
+Int x = (Int y = 10; is y); x    -- x = y
 ```
 
 `is` is consumed by the block, not by the surrounding expression.

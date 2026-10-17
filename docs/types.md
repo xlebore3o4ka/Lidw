@@ -27,16 +27,16 @@ with `x == 0` or `x != 0`, not `Bool b = x`.
 output (`[nul]`).
 
 ```
-if 1 1 else 0        # if [nul] (statement)
-(1 2)                # block [nul] (no is)
+if 1 1 else 0        -- if [nul] (statement)
+(1 2)                -- block [nul] (no is)
 ```
 
 `Nul` fits only into `Nul`. It does not fit into `Int`, `Bool`, or
 anything else:
 
 ```
-Int x = (1 2)        # sema error: block has no value, expected i64
-(1 2) + 1            # sema error: cannot unify nul and iLit(1)
+Int x = (1 2)        -- sema error: block has no value, expected i64
+(1 2) + 1            -- sema error: cannot unify nul and iLit(1)
 ```
 
 ## The literal type `iLit(N)`

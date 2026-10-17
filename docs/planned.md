@@ -11,8 +11,8 @@ marker TBD; `$` was removed from declarations in an earlier step
 because it was a no-op).
 
 ```
-Int(Int a) f = a + 1        # f takes Int, returns Int
-f(10)                       # Int
+Int(Int a) f = a + 1        -- f takes Int, returns Int
+f(10)                       -- Int
 ```
 
 Layers to implement:

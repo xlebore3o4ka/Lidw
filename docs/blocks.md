@@ -9,8 +9,8 @@ The same parentheses play two roles:
 - **Block** — two or more statements inside `( )`. New scope.
 
 ```
-(1 + 2)         # grouping: just binOp(+)
-(1 + 2; 3)      # block: stmts [binOp(+), nkInt(3)]
+(1 + 2)         -- grouping: just binOp(+)
+(1 + 2; 3)      -- block: stmts [binOp(+), nkInt(3)]
 ```
 
 A block's yield is `Nul` unless it contains `is`, or unless it is
@@ -23,15 +23,15 @@ A block opens a new scope. Names declared inside are not visible
 outside:
 
 ```
-(Int y = 10 y)   # y is local
-y                # sema error: undefined variable: y
+(Int y = 10 y)   -- y is local
+y                -- sema error: undefined variable: y
 ```
 
 Outer names are visible inside:
 
 ```
 Int x = 10
-(Int y = 20 x + y)   # ok, x from outer scope
+(Int y = 20 x + y)   -- ok, x from outer scope
 ```
 
 ## `is` in a block
@@ -39,8 +39,8 @@ Int x = 10
 `is expr` yields `expr` from its innermost enclosing block:
 
 ```
-Int x = (Int y = 10; is y)     # x = y, x : Int
-(1; is 2)                      # block [iLit(2)]
+Int x = (Int y = 10; is y)     -- x = y, x : Int
+(1; is 2)                      -- block [iLit(2)]
 ```
 
 Rules enforced by sema:
@@ -52,9 +52,8 @@ Rules enforced by sema:
 - A block yields the type of `is`'s argument. Under a declaration
   context, it must fit `ctx`:
   ```
-  Int x = (is 5)         # ok, block yields iLit(5) fits i64
-  Bool b = (is 5)        # sema error: iLit(5) does not fit Bool? no —
-                         # iLit fits Bool (5 is true); block yields true
+  Int x = (is 5)         -- ok, block yields iLit(5) fits i64
+  Bool b = (is 5)        -- ok, block yields iLit(5) fits Bool (true)
   ```
 - Statements after `is` in the same block are unreachable and
   rejected: `(is 1; 2)` → `unreachable statement after is`.
@@ -71,8 +70,8 @@ To use `is` inside a branch, wrap in parentheses so the branch
 becomes a block:
 
 ```
-Int x = if c; (is 1); else; (is 2)     # ok
-Int x = if c; is 1; else; is 2         # sema error: is outside block
+Int x = if c; (is 1); else; (is 2)     -- ok
+Int x = if c; is 1; else; is 2         -- sema error: is outside block
 ```
 
 ## Root program

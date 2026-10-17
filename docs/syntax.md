@@ -64,8 +64,8 @@ Two-character operators are greedy: `!=` is one token when `!` and
 `=` are adjacent. Whitespace matters:
 
 ```
-x != y       # tkBangEq, one token
-x! = y       # tkBang, tkEquals
+x != y       -- tkBangEq, one token
+x! = y       -- tkBang, tkEquals
 ```
 
 ## Whitespace and separators
@@ -78,8 +78,8 @@ cannot continue the current expression.
 inference is ambiguous, typically before a unary operator:
 
 ```
-Int x = 5 -x       # parsed as Int x = (5 - x); x is undefined -> error
-Int x = 5; -x      # two statements: Int x = 5, then -x
+Int x = 5 -x       -- parsed as Int x = (5 - x); x is undefined -> error
+Int x = 5; -x      -- two statements: Int x = 5, then -x
 ```
 
 Trailing `;` in a block or program is allowed. Empty statements

@@ -122,8 +122,8 @@ make a branch return a non-default value, wrap it in parentheses so
 it becomes a block, and yield via `is`:
 
 ```
-Int x = if c; (is 1); else; (is 2)     # ok
-Int x = if c; is 1; else; is 2         # sema error: is outside block
+Int x = if c; (is 1); else; (is 2)     -- ok
+Int x = if c; is 1; else; is 2         -- sema error: is outside block
 ```
 
 **Codegen.** Statement `if` emits `br i1` into `then`/`else`/`merge`
@@ -136,9 +136,9 @@ blocks. Value `if` additionally emits a `phi` in `merge`. See
 terminates that block.
 
 ```
-(1; is 2)                          # block yields iLit(2)
-(Int y = 10; is y)                 # block yields i64
-Int x = (Int y = 10; is y)         # x = y
+(1; is 2)                          -- block yields iLit(2)
+(Int y = 10; is y)                 -- block yields i64
+Int x = (Int y = 10; is y)         -- x = y
 ```
 
 - `is` must be inside a block. On the program root or directly in an
@@ -157,7 +157,7 @@ Int x = (Int y = 10; is y)         # x = y
 `( expr )` groups:
 
 ```
-(1 + 2) * 3     # iLit(9)
+(1 + 2) * 3     -- iLit(9)
 ```
 
 See [blocks.md](blocks.md) for `( stmt; stmt )`.
@@ -165,18 +165,18 @@ See [blocks.md](blocks.md) for `( stmt; stmt )`.
 ## Examples
 
 ```
-10 + 4                              # iLit(14)
-(10 + 4) * 5                        # iLit(70)
-1 + 2 * 3                           # iLit(7)
--(1 + 2)                            # iLit(-3)
-1 < 2                               # Bool (no value)
+10 + 4                              -- iLit(14)
+(10 + 4) * 5                        -- iLit(70)
+1 + 2 * 3                           -- iLit(7)
+-(1 + 2)                            -- iLit(-3)
+1 < 2                               -- Bool (no value)
 
 Int x = 10
-x + 1                               # Int
-x == 10                             # Bool
+x + 1                               -- Int
+x == 10                             -- Bool
 
 Bool c = 1
-Int y = if c 10 else 20             # if [i64]
-if x < 5 x = 10 else x = 20         # if [nul], statement
-Int z = if c; (is 5); else; (is 7)  # if [i64]
+Int y = if c 10 else 20             -- if [i64]
+if x < 5 x = 10 else x = 20         -- if [nul], statement
+Int z = if c; (is 5); else; (is 7)  -- if [i64]
 ```

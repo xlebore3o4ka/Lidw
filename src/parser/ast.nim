@@ -18,7 +18,7 @@ type
 
   NodeKind* = enum
     nkInt, nkFloat, nkUnary, nkBinOp
-    nkBlock, nkDecl, nkIdent, nkAssign
+    nkBlock, nkProgram, nkDecl, nkIdent, nkAssign
     nkIf, nkIs
 
   Node* = ref object
@@ -37,7 +37,7 @@ type
       op*: BinOp
       left*: Node
       right*: Node
-    of nkBlock:
+    of nkBlock, nkProgram:
       stmts*: seq[Node]
     of nkDecl:
       declName*: string
@@ -92,14 +92,15 @@ proc render(n: Node, depth: int): string =
     pad & "binOp(" & opStr(n.op) & ") @" & $n.line & ":" & $n.col & ts & "\n" &
       render(n.left, depth + 1) & "\n" &
       render(n.right, depth + 1)
-  of nkBlock:
+  of nkBlock, nkProgram:
+    let name = if n.kind == nkBlock: "block" else: "program"
     var parts: seq[string] = @[]
     for s in n.stmts:
       parts.add render(s, depth + 1)
     if parts.len == 0:
-      pad & "block @" & $n.line & ":" & $n.col & ts
+      pad & name & " @" & $n.line & ":" & $n.col & ts
     else:
-      pad & "block @" & $n.line & ":" & $n.col & ts & "\n" & parts.join("\n")
+      pad & name & " @" & $n.line & ":" & $n.col & ts & "\n" & parts.join("\n")
   of nkDecl:
     let mutMark = if n.declMut == muImmutable: "!" else: ""
     let head = "decl(" & n.declName & mutMark & ": " & n.declType & ") @" &

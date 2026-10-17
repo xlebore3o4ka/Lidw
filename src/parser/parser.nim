@@ -207,6 +207,6 @@ proc parseProgram*(tokens: seq[Token]): Node =
     if p.peek().kind == tkEOF: break
     stmts.add parseStmt(p)
   if stmts.len > 0:
-    result = Node(kind: nkBlock, stmts: stmts, line: stmts[0].line, col: stmts[0].col)
+    result = Node(kind: nkProgram, stmts: stmts, line: stmts[0].line, col: stmts[0].col)
   else:
-    result = Node(kind: nkBlock, stmts: @[], line: 1, col: 1)
+    result = Node(kind: nkProgram, stmts: @[], line: 1, col: 1)

@@ -122,6 +122,66 @@ suite "sema":
   test "block nul does not fit i64":
     check expectSema("Int x = (1 2)") == lekSema
 
+  test "if statement position is nul":
+    let n = sema("if 1 1 else 0")
+    check n.stmts[0].kind == nkIf
+    check n.stmts[0].typ.kind == tyNul
+
+  test "if cond must fit Bool":
+    check expectSema("Int c = 1 if c 1 else 0") == lekSema
+
+  test "if with Bool cond is nul in statement":
+    let n = sema("Bool c = 1 if c 1 else 0")
+    check n.stmts[1].kind == nkIf
+    check n.stmts[1].typ.kind == tyNul
+
+  test "if value position takes ctx":
+    let n = sema("Bool c = 1 Int x = if c 1 else 2")
+    check n.stmts[1].kind == nkDecl
+    check n.stmts[1].typ.kind == tyI64
+    check n.stmts[1].declInit.kind == nkIf
+    check n.stmts[1].declInit.typ.kind == tyI64
+
+  test "if without else under ctx":
+    let n = sema("Bool c = 1 Int x = if c 5")
+    check n.stmts[1].declInit.kind == nkIf
+    check n.stmts[1].declInit.typ.kind == tyI64
+
+  test "if branch block without is is error":
+    check expectSema("Bool c = 1 Int x = if c (1 2) else 0") == lekSema
+
+  test "is in block yields":
+    let n = sema("(1; is 2)")
+    check n.stmts[0].kind == nkBlock
+    check n.stmts[0].typ.kind == tyILit
+    check n.stmts[0].typ.value == 2
+
+  test "is block under ctx yields value":
+    let n = sema("Int x = (is 5)")
+    check n.stmts[0].declInit.kind == nkBlock
+    check n.stmts[0].declInit.typ.kind == tyILit
+    check n.stmts[0].declInit.typ.value == 5
+
+  test "is block uses earlier stmt decl":
+    let n = sema("Int x = (Int y = 10; is y)")
+    check n.stmts[0].declInit.kind == nkBlock
+    check n.stmts[0].declInit.typ.kind == tyI64
+
+  test "unreachable after is":
+    check expectSema("(is 1; 2)") == lekSema
+
+  test "is at top level is error":
+    check expectSema("is 1") == lekSema
+
+  test "is in if-branch single-stmt is error":
+    check expectSema("Bool c = 1 Int x = if c; is 1; else; is 2") == lekSema
+
+  test "is in if-branch wrapped in parens works":
+    let n = sema("Bool c = 1 Int x = if c; (is 1); else; (is 2)")
+    check n.stmts[1].declInit.kind == nkIf
+    check n.stmts[1].declInit.ifThen.kind == nkBlock
+    check n.stmts[1].declInit.ifElse.kind == nkBlock
+
   test "redefinition in same scope":
     try:
       discard sema("Int x = 10 Int x = 20")

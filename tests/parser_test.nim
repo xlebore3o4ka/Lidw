@@ -18,7 +18,7 @@ proc expectParse(src: string): LidwErrorKind =
 suite "parser":
   test "single expression wrapped in program block":
     let n = p("10 + 4")
-    check n.kind == nkBlock
+    check n.kind == nkProgram
     check n.stmts.len == 1
     check n.stmts[0].kind == nkBinOp
     check n.stmts[0].op == boAdd

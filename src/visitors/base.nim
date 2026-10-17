@@ -14,6 +14,7 @@ proc visit*[V](v: var V, n: Node) =
   of nkUnary:  v.visitUnary(n)
   of nkBinOp:  v.visitBinOp(n)
   of nkBlock:  v.visitBlock(n)
+  of nkProgram: v.visitProgram(n)
   of nkDecl:   v.visitDecl(n)
   of nkIdent:  v.visitIdent(n)
   of nkAssign: v.visitAssign(n)
@@ -28,6 +29,7 @@ when isMainModule:
   proc visitUnary*(v: var Noop, n: Node) = discard
   proc visitBinOp*(v: var Noop, n: Node) = discard
   proc visitBlock*(v: var Noop, n: Node) = discard
+  proc visitProgram*(v: var Noop, n: Node) = discard
   proc visitDecl*(v: var Noop, n: Node) = discard
   proc visitIdent*(v: var Noop, n: Node) = discard
   proc visitAssign*(v: var Noop, n: Node) = discard

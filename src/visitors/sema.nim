@@ -25,6 +25,7 @@ proc visitFloat*(v: var SemaVisitor, n: Node)
 proc visitUnary*(v: var SemaVisitor, n: Node)
 proc visitBinOp*(v: var SemaVisitor, n: Node)
 proc visitBlock*(v: var SemaVisitor, n: Node)
+proc visitProgram*(v: var SemaVisitor, n: Node)
 proc visitDecl*(v: var SemaVisitor, n: Node)
 proc visitIdent*(v: var SemaVisitor, n: Node)
 proc visitAssign*(v: var SemaVisitor, n: Node)
@@ -202,23 +203,58 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
         n.line, n.col)
     n.typ = unified
 
-proc visitBlock*(v: var SemaVisitor, n: Node) =
-  # <NOTE>#19: block without 'is' has no value. Under ctx that is an
-  # error ("block has no value"); outside ctx it is a statement (nul).
-  # 'is' inside a block is handled in visitIs (C2e).
+proc visitProgram*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#33: program root is NOT a block for 'is'; a top-level nkIs
+  # statement is an error (is needs a real block to yield from).
   discard v.symbols.open()
+  let saveCtx = v.ctx
   try:
-    let saveCtx = v.ctx
     v.ctx = nil
     for s in n.stmts:
+      if s.kind == nkIs:
+        raise lidwError(lekSema,
+          "is outside block (use `(is ...)` or a multi-stmt branch)",
+          s.line, s.col)
       visit(v, s)
-    v.ctx = saveCtx
   finally:
     v.symbols.close()
-  if v.ctx != nil:
-    raise lidwError(lekSema,
-      "block has no value, expected " & $v.ctx, n.line, n.col)
+    v.ctx = saveCtx
   n.typ = nulType()
+
+proc visitBlock*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#19: block yields via 'is'. Without 'is': under ctx it is an
+  # error ("block has no value"); outside ctx it is a statement (nul).
+  # 'is' is handled here directly (not via visitIs) so that nkIs outside
+  # a block is a hard error in visitIs.
+  discard v.symbols.open()
+  let outerCtx = v.ctx
+  var yielded: Node = nil
+  try:
+    v.ctx = nil
+    for s in n.stmts:
+      if yielded != nil:
+        raise lidwError(lekSema,
+          "unreachable statement after is", s.line, s.col)
+      if s.kind == nkIs:
+        visit(v, s.isValue)
+        s.typ = s.isValue.typ
+        yielded = s
+      else:
+        visit(v, s)
+  finally:
+    v.symbols.close()
+    v.ctx = outerCtx
+  if yielded != nil:
+    n.typ = yielded.typ
+    if outerCtx != nil and not fits(n.typ, outerCtx):
+      raise lidwError(lekSema,
+        "block yields " & $n.typ & ", expected " & $outerCtx,
+        n.line, n.col)
+  else:
+    if outerCtx != nil:
+      raise lidwError(lekSema,
+        "block has no value, expected " & $outerCtx, n.line, n.col)
+    n.typ = nulType()
 
 proc visitDecl*(v: var SemaVisitor, n: Node) =
   let declT = resolveTypeName(n.declType, n.line, n.col)
@@ -260,12 +296,39 @@ proc visitAssign*(v: var SemaVisitor, n: Node) =
   n.typ = sym.typ
 
 proc visitIf*(v: var SemaVisitor, n: Node) =
-  # <TODO>#30: C2e — cond fits Bool, branches yield, else default
-  raise lidwError(lekSema, "if: not implemented yet", n.line, n.col)
+  let outerCtx = v.ctx
+  # cond under nil ctx; then explicit fits(Bool) check
+  v.ctx = nil
+  visit(v, n.ifCond)
+  v.ctx = outerCtx
+  if not fits(n.ifCond.typ, boolType()):
+    raise lidwError(lekSema,
+      "if condition has type " & $n.ifCond.typ & ", expected Bool",
+      n.ifCond.line, n.ifCond.col)
+  # branches under outerCtx (nil in statement position)
+  visit(v, n.ifThen)
+  if n.ifElse != nil:
+    visit(v, n.ifElse)
+  # result
+  if outerCtx == nil:
+    n.typ = nulType()
+  else:
+    if not fits(n.ifThen.typ, outerCtx):
+      raise lidwError(lekSema,
+        "if branch yields " & $n.ifThen.typ & ", expected " & $outerCtx,
+        n.ifThen.line, n.ifThen.col)
+    if n.ifElse != nil and not fits(n.ifElse.typ, outerCtx):
+      raise lidwError(lekSema,
+        "if branch yields " & $n.ifElse.typ & ", expected " & $outerCtx,
+        n.ifElse.line, n.ifElse.col)
+    n.typ = outerCtx
 
 proc visitIs*(v: var SemaVisitor, n: Node) =
-  # <TODO>#31: C2e — yield from nearest block
-  raise lidwError(lekSema, "is: not implemented yet", n.line, n.col)
+  # <NOTE>#34: visitBlock handles nkIs inline. Reaching here means nkIs
+  # appeared where no block can catch its yield.
+  raise lidwError(lekSema,
+    "is outside block (use `(is ...)` or a multi-stmt branch)",
+    n.line, n.col)
 
 proc runSema*(n: Node): Node =
   ## Run sema on n; types set in-place, n returned.

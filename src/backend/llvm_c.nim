@@ -130,6 +130,14 @@ proc LLVMBuildBr*(Builder: LLVMBuilderRef,
 proc LLVMBuildCondBr*(Builder: LLVMBuilderRef, If: LLVMValueRef,
                       Then, Else: LLVMBasicBlockRef): LLVMValueRef
   {.cdecl, importc: "LLVMBuildCondBr".}
+proc LLVMBuildPhi*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,
+                   Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildPhi".}
+proc LLVMAddIncoming*(PhiNode: LLVMValueRef,
+                      IncomingValues: ptr LLVMValueRef,
+                      IncomingBlocks: ptr LLVMBasicBlockRef,
+                      Count: cuint)
+  {.cdecl, importc: "LLVMAddIncoming".}
 
 # --- verification ---
 proc LLVMVerifyModule*(M: LLVMModuleRef,

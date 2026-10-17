@@ -45,11 +45,15 @@ proc cmpPredicate(op: BinOp): cint =
   else:
     raise newException(ValueError, "cmpPredicate: not a comparison: " & opStr(op))
 
-proc toBool(c: CodegenCtx, v: LLVMValueRef): LLVMValueRef =
+proc toBool(c: var CodegenCtx, v: LLVMValueRef): LLVMValueRef =
   ## Convert i64 value to i1 (non-zero = true).
   LLVMBuildICmp(c.builder, LLVMIntNE, v, LLVMConstInt(c.i64, 0, 0), "to_bool")
 
-proc emitExpr(c: CodegenCtx, n: Node): LLVMValueRef =
+# <NOTE>#52: emitExpr needs emitStmt for nkBlock bodies; emitStmt needs
+# emitExpr for values. Forward-declare emitStmt so both can coexist.
+proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef
+
+proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   case n.kind
   of nkInt:
     LLVMConstInt(c.i64, cast[culonglong](n.intVal), 0)
@@ -92,6 +96,29 @@ proc emitExpr(c: CodegenCtx, n: Node): LLVMValueRef =
     let loadName = n.identName & "_load"
     let ty = c.lookupVarType(n.identName, c.i64)
     LLVMBuildLoad2(c.builder, ty, slot, loadName.cstring)
+  of nkBlock:
+    # <NOTE>#49: value-block. Sema guarantees a value-block ends with
+    # `is` (or is a grouping that yields its single stmt); statements
+    # before `is` are emitted for effect.
+    c.scopes.add initTable[string, LLVMValueRef]()
+    c.varTypes.add initTable[string, LLVMTypeRef]()
+    var val: LLVMValueRef = nil
+    for stmt in n.stmts:
+      if stmt.kind == nkIs:
+        val = emitExpr(c, stmt.isValue)
+      else:
+        let v = emitStmt(c, stmt)
+        if v != nil: val = v
+    c.scopes.setLen(c.scopes.len - 1)
+    c.varTypes.setLen(c.varTypes.len - 1)
+    if val == nil:
+      raise newException(ValueError,
+        "codegen: value block without is")
+    val
+  of nkIs:
+    # <NOTE>#50: `is` is normally consumed by emitExpr(nkBlock). This
+    # case exists so emitExpr can recurse into a bare `is` if needed.
+    emitExpr(c, n.isValue)
   of nkIf:
     # <NOTE>#46: value-if. Both branches must be value expressions
     # (literals, idents, binops). Statement branches (decl/assign/block)
@@ -176,6 +203,10 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   of nkInt, nkIdent, nkUnary, nkBinOp:
     emitExpr(c, n)
   of nkBlock:
+    # <NOTE>#51: value-block delegates to emitExpr so `is` yields.
+    # Statement-block (nul type) stays flat — no yield, last value wins.
+    if n.typ != nil and n.typ.kind != tyNul:
+      return emitExpr(c, n)
     c.scopes.add initTable[string, LLVMValueRef]()
     c.varTypes.add initTable[string, LLVMTypeRef]()
     var lastVal: LLVMValueRef = nil

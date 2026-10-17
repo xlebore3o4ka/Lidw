@@ -184,6 +184,50 @@ suite "llvm-c bindings":
     check "store i64 1" in ir
     check "store i64 2" in ir
 
+  test "emitModule is in block yields value":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkBlock, typ: i64Type(), stmts: @[
+             Node(kind: nkIs, typ: iLitType(5),
+                  isValue: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))
+           ]))
+    ])
+    let ir = emitModule(p)
+    check "store i64 5" in ir
+
+  test "emitModule is with prior stmts in block":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkBlock, typ: i64Type(), stmts: @[
+             Node(kind: nkDecl, declName: "y", declType: "Int",
+                  declInit: Node(kind: nkInt, intVal: 10, typ: iLitType(10))),
+             Node(kind: nkIs, typ: i64Type(),
+                  isValue: Node(kind: nkIdent, identName: "y", typ: i64Type()))
+           ]))
+    ])
+    let ir = emitModule(p)
+    check "store i64 10" in ir
+    check "load i64" in ir
+
+  test "emitModule if branches with is yield via phi":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "c", declType: "Bool",
+           declInit: Node(kind: nkInt, intVal: 1, typ: iLitType(1))),
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkIf, typ: i64Type(),
+             ifCond: Node(kind: nkIdent, identName: "c", typ: boolType()),
+             ifThen: Node(kind: nkBlock, typ: i64Type(), stmts: @[
+               Node(kind: nkIs, typ: iLitType(5),
+                    isValue: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))
+             ]),
+             ifElse: Node(kind: nkBlock, typ: i64Type(), stmts: @[
+               Node(kind: nkIs, typ: iLitType(7),
+                    isValue: Node(kind: nkInt, intVal: 7, typ: iLitType(7)))
+             ])))
+    ])
+    let ir = emitModule(p)
+    check "phi i64" in ir
+
   test "emitModule value-if produces phi":
     # non-constant cond so LLVM cannot fold the branches away.
     let p = Node(kind: nkProgram, stmts: @[

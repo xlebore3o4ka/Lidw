@@ -356,9 +356,8 @@ proc visitBlock*(v: var SemaVisitor, n: Node) =
     n.typ = nulType()
 
 proc visitDecl*(v: var SemaVisitor, n: Node) =
-  let declT =
-    if n.declTypeNode != nil: visitTypeNode(v, n.declTypeNode)
-    else: resolveTypeName(n.declType, n.line, n.col)
+  doAssert n.declTypeNode != nil, "sema: decl without type node"
+  let declT = visitTypeNode(v, n.declTypeNode)
   let isFnDecl = declT.kind == tyFn
   if isFnDecl:
     # <TODO>#81: visit fn body in Fa.3b. For now register the symbol.

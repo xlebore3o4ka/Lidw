@@ -39,8 +39,7 @@ type
       stmts*: seq[Node]
     of nkDecl:
       declName*: string
-      declType*: string         ## legacy; mirrors declTypeNode for T (Fa)
-      declTypeNode*: Node       ## nil until parseType lands; B refactor
+      declTypeNode*: Node
       declMut*: Mutability
       declInit*: Node
     of nkIdent:
@@ -88,6 +87,21 @@ proc unopStr*(o: UnOp): string =
 proc typeSuffix(n: Node): string =
   if n.typ == nil: "" else: " [" & $n.typ & "]"
 
+proc typeNodeStr*(n: Node): string =
+  ## <NOTE>#83: render a type-expression as source-style text.
+  ## Used by `$`-render of nkDecl when sema hasn't run (typ == nil) and
+  ## by parser error messages.
+  if n == nil: return ""
+  case n.kind
+  of nkTypeName: n.typeName
+  of nkFnType:
+    var parts: seq[string] = @[]
+    for p in n.fnParams:
+      parts.add typeNodeStr(p.paramType)
+    typeNodeStr(n.fnRet) & "(" & parts.join(", ") & ")"
+  of nkParam: typeNodeStr(n.paramType)
+  else: "<type>"
+
 proc render(n: Node, depth: int): string =
   let pad = "  ".repeat(depth)
   let ts = typeSuffix(n)
@@ -114,7 +128,11 @@ proc render(n: Node, depth: int): string =
       pad & name & " @" & $n.line & ":" & $n.col & ts & "\n" & parts.join("\n")
   of nkDecl:
     let mutMark = if n.declMut == muImmutable: "!" else: ""
-    let head = "decl(" & n.declName & mutMark & ": " & n.declType & ") @" &
+    let typeStr =
+      if n.declTypeNode != nil: typeNodeStr(n.declTypeNode)
+      elif n.typ != nil: $n.typ
+      else: "?"
+    let head = "decl(" & n.declName & mutMark & ": " & typeStr & ") @" &
       $n.line & ":" & $n.col & ts
     if n.declInit == nil:
       pad & head

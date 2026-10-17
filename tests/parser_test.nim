@@ -31,7 +31,6 @@ suite "parser":
     let d = n.stmts[0]
     check d.kind == nkDecl
     check d.declName == "x"
-    check d.declType == "Int"
     check d.declInit != nil
     check d.declInit.kind == nkInt and d.declInit.intVal == 10
 
@@ -80,7 +79,6 @@ suite "parser":
     check n.stmts[0].kind == nkDecl
     check n.stmts[0].declTypeNode.kind == nkTypeName
     check n.stmts[0].declTypeNode.typeName == "Int"
-    check n.stmts[0].declType == "Int"
 
   test "narrow type also has typeNode":
     let n = p("U8 x = 5")

@@ -195,12 +195,11 @@ proc parseType(p: var Parser): Node =
        line: t.line, col: t.col)
 
 proc parseDecl(p: var Parser): Node =
-  let typeTok = p.peek()
   let typeNode = parseType(p)
   let nameTok = p.peek()
   if nameTok.kind != tkIdent:
     raise lidwError(lekParse,
-      "expected identifier after type " & typeTok.word,
+      "expected identifier after type " & typeNodeStr(typeNode),
       nameTok.line, nameTok.col)
   p.advance()
   # <NOTE>#22: '!' marks immutable, '$' marks mutable explicitly; both are
@@ -211,17 +210,15 @@ proc parseDecl(p: var Parser): Node =
     p.advance()
   elif p.peek().kind == tkDollar:
     p.advance()
-  let typeName =
-    if typeNode.kind == nkTypeName: typeNode.typeName else: ""
   if p.peek().kind == tkEquals:
     let eqTok = p.peek()
     p.advance()
     let iv = parseExpr(p, 0)
-    result = Node(kind: nkDecl, declName: nameTok.word, declType: typeName,
+    result = Node(kind: nkDecl, declName: nameTok.word,
                   declTypeNode: typeNode, declMut: mut, declInit: iv,
                   line: eqTok.line, col: eqTok.col)
   else:
-    result = Node(kind: nkDecl, declName: nameTok.word, declType: typeName,
+    result = Node(kind: nkDecl, declName: nameTok.word,
                   declTypeNode: typeNode, declMut: mut, declInit: nil,
                   line: nameTok.line, col: nameTok.col)
 

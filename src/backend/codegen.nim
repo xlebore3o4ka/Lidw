@@ -2,7 +2,6 @@
 # <NOTE>#37: Step 2 skeleton — ignores the program body for now and emits
 # `main: i64 () { ret i64 0 }`. AST traversal lands in Step 3.
 
-import std/strutils
 import ../parser/ast
 import ./llvm_c
 

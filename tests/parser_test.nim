@@ -35,6 +35,18 @@ suite "parser":
     check d.declInit != nil
     check d.declInit.kind == nkInt and d.declInit.intVal == 10
 
+  test "decl has typeNode":
+    let n = p("Int x = 10")
+    check n.stmts[0].kind == nkDecl
+    check n.stmts[0].declTypeNode.kind == nkTypeName
+    check n.stmts[0].declTypeNode.typeName == "Int"
+    check n.stmts[0].declType == "Int"
+
+  test "narrow type also has typeNode":
+    let n = p("U8 x = 5")
+    check n.stmts[0].declTypeNode.kind == nkTypeName
+    check n.stmts[0].declTypeNode.typeName == "U8"
+
   test "decl without init":
     let n = p("Int x")
     check n.stmts[0].kind == nkDecl

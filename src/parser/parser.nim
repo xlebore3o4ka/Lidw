@@ -132,13 +132,24 @@ proc parse*(tokens: seq[Token]): Node =
     raise lidwError(lekParse, "unexpected token after expression: " & $trailing,
                     trailing.line, trailing.col)
 
+# <NOTE>#77: parseType handles a single type-expression. Today it is
+# just `tkType -> nkTypeName`. Function types T(A, B) land in Fa.2.
+proc parseType(p: var Parser): Node =
+  let t = p.peek()
+  if t.kind != tkType:
+    raise lidwError(lekParse,
+      "expected type, got " & $t, t.line, t.col)
+  p.advance()
+  Node(kind: nkTypeName, typeName: t.word, line: t.line, col: t.col)
+
 proc parseDecl(p: var Parser): Node =
   let typeTok = p.peek()
-  p.advance()
+  let typeNode = parseType(p)
   let nameTok = p.peek()
   if nameTok.kind != tkIdent:
     raise lidwError(lekParse,
-      "expected identifier after type " & typeTok.word, nameTok.line, nameTok.col)
+      "expected identifier after type " & typeTok.word,
+      nameTok.line, nameTok.col)
   p.advance()
   # <NOTE>#22: '!' marks immutable, '$' marks mutable explicitly; both are
   # optional postfixes on the name, before '='.
@@ -148,15 +159,19 @@ proc parseDecl(p: var Parser): Node =
     p.advance()
   elif p.peek().kind == tkDollar:
     p.advance()
+  let typeName =
+    if typeNode.kind == nkTypeName: typeNode.typeName else: ""
   if p.peek().kind == tkEquals:
     let eqTok = p.peek()
     p.advance()
     let iv = parseExpr(p, 0)
-    result = Node(kind: nkDecl, declName: nameTok.word, declType: typeTok.word,
-                  declMut: mut, declInit: iv, line: eqTok.line, col: eqTok.col)
+    result = Node(kind: nkDecl, declName: nameTok.word, declType: typeName,
+                  declTypeNode: typeNode, declMut: mut, declInit: iv,
+                  line: eqTok.line, col: eqTok.col)
   else:
-    result = Node(kind: nkDecl, declName: nameTok.word, declType: typeTok.word,
-                  declMut: mut, declInit: nil, line: nameTok.line, col: nameTok.col)
+    result = Node(kind: nkDecl, declName: nameTok.word, declType: typeName,
+                  declTypeNode: typeNode, declMut: mut, declInit: nil,
+                  line: nameTok.line, col: nameTok.col)
 
 proc parseAssign(p: var Parser): Node =
   let nameTok = p.peek()

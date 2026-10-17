@@ -20,6 +20,7 @@ type
     nkInt, nkFloat, nkUnary, nkBinOp
     nkBlock, nkProgram, nkDecl, nkIdent, nkAssign
     nkIf, nkIs, nkCast
+    nkTypeName
 
   Node* = ref object
     line*: int
@@ -41,7 +42,8 @@ type
       stmts*: seq[Node]
     of nkDecl:
       declName*: string
-      declType*: string
+      declType*: string         ## legacy; mirrors declTypeNode for T (Fa)
+      declTypeNode*: Node       ## nil until parseType lands; B refactor
       declMut*: Mutability
       declInit*: Node
     of nkIdent:
@@ -58,6 +60,8 @@ type
     of nkCast:
       castTarget*: string
       castExpr*: Node
+    of nkTypeName:
+      typeName*: string
 
 proc opStr*(o: BinOp): string =
   case o
@@ -131,5 +135,7 @@ proc render(n: Node, depth: int): string =
   of nkCast:
     pad & "cast(" & n.castTarget & ") @" & $n.line & ":" & $n.col & ts & "\n" &
       render(n.castExpr, depth + 1)
+  of nkTypeName:
+    pad & "type(" & n.typeName & ") @" & $n.line & ":" & $n.col
 
 proc `$`*(n: Node): string = render(n, 0)

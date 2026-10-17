@@ -32,6 +32,7 @@ proc visitAssign*(v: var SemaVisitor, n: Node)
 proc visitIf*(v: var SemaVisitor, n: Node)
 proc visitIs*(v: var SemaVisitor, n: Node)
 proc visitCast*(v: var SemaVisitor, n: Node)
+proc visitTypeName*(v: var SemaVisitor, n: Node)
 
 # <NOTE>#54: iLit range per concrete int type. U64 upper is above int64
 # max; iLit carries int64, so any non-negative value fits U64.
@@ -422,6 +423,13 @@ proc visitCast*(v: var SemaVisitor, n: Node) =
   if v.ctx != nil and not fits(n.typ, v.ctx):
     raise lidwError(lekSema,
       "cast to " & $n.typ & " does not fit " & $v.ctx, n.line, n.col)
+
+proc visitTypeName*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#78: type nodes are resolved by the caller (visitDecl via
+  # resolveTypeName / visitType in Fa.3). Reaching here means a type
+  # node leaked into expression position.
+  raise lidwError(lekSema,
+    "type name in expression position: " & n.typeName, n.line, n.col)
 
 proc runSema*(n: Node): Node =
   ## Run sema on n; types set in-place, n returned.

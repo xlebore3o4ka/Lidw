@@ -32,35 +32,45 @@ proc visitAssign*(v: var SemaVisitor, n: Node)
 proc visitIf*(v: var SemaVisitor, n: Node)
 proc visitIs*(v: var SemaVisitor, n: Node)
 
+# <NOTE>#54: iLit range per concrete int type. U64 upper is above int64
+# max; iLit carries int64, so any non-negative value fits U64.
+proc fitsIntLit(v: int64, k: TypeKind): bool =
+  case k
+  of tyI8:  v >= -128 and v <= 127
+  of tyU8:  v >= 0 and v <= 255
+  of tyI16: v >= -32768 and v <= 32767
+  of tyU16: v >= 0 and v <= 65535
+  of tyI32: v >= -2147483648'i64 and v <= 2147483647'i64
+  of tyU32: v >= 0 and v <= 4294967295'i64
+  of tyI64: true
+  of tyU64: v >= 0
+  else:
+    raise newException(AssertionDefect,
+      "fitsIntLit: not an int kind: " & $k)
+
 proc fits*(t, ctx: LidwType): bool =
   ## Does type t satisfy expected context ctx?
   ## nil ctx = no expectation, anything fits.
+  ## <NOTE>#55: no implicit conversion between concrete int types; U8
+  ## does not fit U16. Widening happens only inside binary operators
+  ## (7b), not here.
   if ctx == nil: return true
+  if t == nil: return false
+  if ctx.kind in IntKinds:
+    if t.kind == tyILit:
+      return fitsIntLit(t.value, ctx.kind)
+    if t.kind in IntKinds:
+      return t.kind == ctx.kind
+    return false
   case ctx.kind
-  of tyI64:
-    case t.kind
-    of tyI64:  true
-    of tyILit: true          # int64 value always inside i64 range
-    of tyBool: false         # need explicit comparison
-    of tyNul:  false
   of tyILit:
-    case t.kind
-    of tyILit: t.value == ctx.value
-    of tyI64:  false
-    of tyBool: false
-    of tyNul:  false
+    t.kind == tyILit and t.value == ctx.value
   of tyBool:
-    case t.kind
-    of tyBool: true
-    of tyILit: true          # 0 = false, !=0 = true
-    of tyI64:  false         # need explicit ==/!= to convert
-    of tyNul:  false
+    t.kind == tyBool or t.kind == tyILit
   of tyNul:
-    case t.kind
-    of tyNul:  true
-    of tyBool: false
-    of tyILit: false
-    of tyI64:  false
+    t.kind == tyNul
+  else:
+    false
 
 proc foldInt(op: BinOp, a, b: int64, line, col: int): int64 =
   ## Compute a op b; raise lekSema on overflow or division by zero.
@@ -113,10 +123,15 @@ proc visitFloat*(v: var SemaVisitor, n: Node) =
   discard
 
 proc visitUnary*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#57: operand is visited without ctx. Unary minus folds
+  # literals (iLit(128) -> iLit(-128)) and only the RESULT is checked
+  # against ctx. Otherwise `I8 x = -128` would reject the literal 128
+  # before the sign is applied.
+  let saveCtx = v.ctx
+  v.ctx = nil
   visit(v, n.operand)
+  v.ctx = saveCtx
   if n.operand.typ.kind == tyILit:
-    # <NOTE>#12: literal folds through unary regardless of context;
-    # context only checks the folded value fits.
     case n.unop
     of uoNeg:
       let val = n.operand.typ.value
@@ -128,8 +143,7 @@ proc visitUnary*(v: var SemaVisitor, n: Node) =
           "literal " & $lt & " does not fit " & $v.ctx, n.line, n.col)
       n.typ = lt
   else:
-    # <NOTE>#21: concrete operand; unary keeps its type, ctx is a check.
-    if n.operand.typ.kind notin {tyI64, tyILit}:
+    if n.operand.typ.kind notin IntKinds:
       raise lidwError(lekSema,
         "unary " & unopStr(n.unop) & " requires Int, got " & $n.operand.typ,
         n.line, n.col)

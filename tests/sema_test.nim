@@ -303,3 +303,62 @@ suite "sema":
 
   test "nul does not fit bool context":
     check not fits(nulType(), boolType())
+
+  test "iLit range for i8":
+    check fits(iLitType(127), i8Type())
+    check not fits(iLitType(128), i8Type())
+    check fits(iLitType(-128), i8Type())
+    check not fits(iLitType(-129), i8Type())
+
+  test "iLit range for u8":
+    check fits(iLitType(0), u8Type())
+    check fits(iLitType(255), u8Type())
+    check not fits(iLitType(-1), u8Type())
+    check not fits(iLitType(256), u8Type())
+
+  test "iLit range for i16 and u16":
+    check fits(iLitType(32767), i16Type())
+    check not fits(iLitType(32768), i16Type())
+    check fits(iLitType(65535), u16Type())
+    check not fits(iLitType(65536), u16Type())
+
+  test "iLit range for i32 and u32":
+    check fits(iLitType(2147483647), i32Type())
+    check not fits(iLitType(2147483648), i32Type())
+    check fits(iLitType(4294967295), u32Type())
+    check not fits(iLitType(4294967296), u32Type())
+
+  test "iLit range for u64":
+    check fits(iLitType(0), u64Type())
+    check fits(iLitType(high(int64)), u64Type())
+    check not fits(iLitType(-1), u64Type())
+
+  test "no implicit conversion between concrete int types":
+    check not fits(i64Type(), u8Type())
+    check not fits(u8Type(), u16Type())
+    check not fits(i8Type(), i64Type())
+    check fits(u8Type(), u8Type())
+
+  test "decl with narrow type":
+    let n = sema("U8 x = 5")
+    check n.stmts[0].typ.kind == tyU8
+    check n.stmts[0].declInit.typ.kind == tyILit
+
+  test "decl narrow overflow":
+    check expectSema("U8 x = 256") == lekSema
+    check expectSema("I8 x = 128") == lekSema
+    check expectSema("I8 x = -129") == lekSema
+    check expectSema("U8 x = -1") == lekSema
+
+  test "decl i8 in range":
+    let n = sema("I8 x = -128")
+    check n.stmts[0].typ.kind == tyI8
+
+  test "read narrow variable":
+    let n = sema("U8 x = 5 x")
+    check n.stmts[1].typ.kind == tyU8
+
+  test "arithmetic on narrow not yet supported":
+    check expectSema("U8 x = 5 x + 1") == lekSema
+    # U8(0) is not a cast yet; U8 followed by ( is a parse error.
+    check expectSema("Bool b = U8(0) < 1") == lekParse

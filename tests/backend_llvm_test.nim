@@ -125,6 +125,17 @@ suite "llvm-c bindings":
     check "alloca i1" in ir
     check "store i1 true" in ir
 
+  test "emitModule narrow decl rejected in codegen":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "U8",
+           declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))
+    ])
+    try:
+      discard emitModule(p)
+      check false
+    except ValueError as e:
+      check "narrow int types not supported yet" in e.msg
+
   test "emitModule Bool decl no init stores i1 false":
     let p = Node(kind: nkProgram, stmts: @[
       Node(kind: nkDecl, declName: "b", declType: "Bool", declInit: nil)

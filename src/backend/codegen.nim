@@ -173,9 +173,17 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   of nkDecl:
     # <TODO>#41: alloca in current block; for non-linear control flow
     # these must go to the entry block.
+    # <TODO>#56: narrow int types are not yet supported in codegen; see 7d.
     let llvmTy =
-      if n.declType == "Bool": c.i1
-      else: c.i64          # Int, I64, anything else sema already rejected
+      case n.declType
+      of "Bool": c.i1
+      of "Int", "I64": c.i64
+      of "I8", "U8", "I16", "U16", "I32", "U32", "U64":
+        raise newException(ValueError,
+          "codegen: narrow int types not supported yet: " & n.declType)
+      else:
+        raise newException(ValueError,
+          "codegen: unknown declared type: " & n.declType)
     let slot = LLVMBuildAlloca(c.builder, llvmTy, n.declName.cstring)
     c.defineVar(n.declName, slot, llvmTy)
     var initVal: LLVMValueRef

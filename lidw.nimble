@@ -20,6 +20,7 @@ task test, "Run all tests":
   exec "nim c -r --hints:off -o:/tmp/lidw_tests_parser tests/parser_test.nim"
   exec "nim c -r --hints:off -o:/tmp/lidw_tests_sema tests/sema_test.nim"
   exec "nim c -r --hints:off -o:/tmp/lidw_tests_backend_llvm tests/backend_llvm_test.nim"
+  exec "nim c -r --hints:off -o:/tmp/lidw_tests_types tests/types_test.nim"
 
 task myRun, "Run with the required flags":
   exec "nimble --debugger:native --stacktrace:on --linetrace:on -d:debug --passC:-D_GNU_SOURCE -d:nimNoLentIterators run -- " & commandLineParams.join(" ")

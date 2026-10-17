@@ -37,9 +37,38 @@ proc adv(l: var Lexer) =
       inc l.col
     inc l.pos
 
+# <NOTE>#53: skipWhitespace also consumes comments (-- to EOL, and
+# nestable block -/ ... /-). Comment handling lives here so every
+# token sees the same trivia rule. Adjacency matters: '--' and '-/'
+# are only comments when the two chars are next to each other;
+# 'a - -b' is subtraction, 'a -- b' is a comment.
 proc skipWhitespace(l: var Lexer) =
-  while l.pos < l.src.len and l.src[l.pos] in {' ', '\t', '\r', '\n'}:
-    l.adv()
+  while l.pos < l.src.len:
+    let c = l.src[l.pos]
+    if c in {' ', '\t', '\r', '\n'}:
+      l.adv()
+    elif c == '-' and l.pos + 1 < l.src.len and l.src[l.pos + 1] == '-':
+      l.adv(); l.adv()
+      while l.pos < l.src.len and l.src[l.pos] notin {'\n', '\r'}:
+        l.adv()
+    elif c == '-' and l.pos + 1 < l.src.len and l.src[l.pos + 1] == '/':
+      let startLine = l.line
+      let startCol = l.col
+      l.adv(); l.adv()
+      var depth = 1
+      while l.pos < l.src.len and depth > 0:
+        if l.pos + 1 < l.src.len and l.src[l.pos] == '-' and l.src[l.pos + 1] == '/':
+          l.adv(); l.adv()
+          inc depth
+        elif l.pos + 1 < l.src.len and l.src[l.pos] == '/' and l.src[l.pos + 1] == '-':
+          l.adv(); l.adv()
+          dec depth
+        else:
+          l.adv()
+      if depth > 0:
+        raise lidwError(lekLex, "unterminated block comment", startLine, startCol)
+    else:
+      break
 
 proc lexNumber(l: var Lexer): Token =
   let startLine = l.line

@@ -100,4 +100,30 @@ yield from.
 
 ## Comments
 
-Not supported. No line or block comment syntax.
+Two forms, both consumed as trivia (like whitespace):
+
+- **Line comment:** `--` to end of line.
+  ```
+  Int x = 1 -- set to one
+  ```
+- **Block comment:** `-/` to `/-`. May span lines. Nests.
+  ```
+  -/ outer
+     -/ inner /-
+     still outer /-
+  Int x = 1
+  ```
+
+A nested `-/` opens another level; the matching `/-` closes only
+that level. `-/ -/ x /- /-` is a single comment.
+
+**Adjacency matters.** The two-char sequences must be next to each
+other:
+
+- `a - -b` is subtraction of unary minus. `a--b` is `a` followed by
+  a line comment (the `-b` is gone).
+- `a -/ b` opens a block comment. `a - / b` is minus then slash, a
+  parse error in most contexts.
+
+An unterminated block comment is a lex error. A line comment ends
+at EOF (or at `\n` / `\r`).

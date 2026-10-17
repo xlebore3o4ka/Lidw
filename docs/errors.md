@@ -8,6 +8,7 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
 
 - `unexpected character '<ch>'` — a byte no token starts with.
   Cyrillic and other non-ASCII input hits this.
+- `unterminated block comment` — `-/` without a matching `/-`.
 
 ## Parse errors (`lekParse`)
 

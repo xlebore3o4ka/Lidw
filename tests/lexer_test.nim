@@ -1,6 +1,7 @@
 # Lexer unit tests.
 
 import std/unittest
+import std/strutils
 import ../src/parser/tokens
 import ../src/parser/lexer
 import ../src/errors
@@ -131,3 +132,66 @@ suite "lexer":
     check lexAll("iff")[0].kind == tkIdent
     check lexAll("elsewhere")[0].kind == tkIdent
     check lexAll("issue")[0].kind == tkIdent
+
+  test "line comment to end of line":
+    let ts = lexAll("a -- comment\nb")
+    check ts.len == 3
+    check ts[0].kind == tkIdent and ts[0].word == "a"
+    check ts[1].kind == tkIdent and ts[1].word == "b"
+    check ts[1].line == 2
+    check ts[2].kind == tkEOF
+
+  test "line comment at EOF without newline":
+    let ts = lexAll("a -- trailing")
+    check ts.len == 2
+    check ts[0].kind == tkIdent and ts[0].word == "a"
+    check ts[1].kind == tkEOF
+
+  test "block comment inline":
+    let ts = lexAll("a -/ ignored /- b")
+    check ts.len == 3
+    check ts[0].kind == tkIdent and ts[0].word == "a"
+    check ts[1].kind == tkIdent and ts[1].word == "b"
+
+  test "nested block comment":
+    let ts = lexAll("-/ -/ x /- /- 1")
+    check ts.len == 2
+    check ts[0].kind == tkInt and ts[0].intVal == 1
+    check ts[1].kind == tkEOF
+
+  test "block comment spanning lines tracks line":
+    let ts = lexAll("a\n-/ one\ntwo /-\nb")
+    check ts.len == 3
+    check ts[0].line == 1
+    check ts[1].kind == tkIdent and ts[1].word == "b"
+    check ts[1].line == 4
+
+  test "cyrillic inside comment is fine":
+    let ts = lexAll("a -- привет\nb")
+    check ts.len == 3
+    check ts[0].kind == tkIdent and ts[0].word == "a"
+    check ts[1].kind == tkIdent and ts[1].word == "b"
+
+  test "unterminated block comment":
+    try:
+      discard lexAll("-/ no end")
+      check false
+    except LidwError as e:
+      check e.kind == lekLex
+      check "unterminated block comment" in e.msg
+
+  test "adjacent dashes are comment, spaced dashes are minus":
+    let ts = lexAll("a - -b")
+    check ts.len == 5
+    check ts[0].kind == tkIdent
+    check ts[1].kind == tkMinus
+    check ts[2].kind == tkMinus
+    check ts[3].kind == tkIdent
+    check ts[4].kind == tkEOF
+
+  test "adjacent dash-slash is comment, spaced is minus slash":
+    let ts = lexAll("a - / b")
+    check ts[0].kind == tkIdent
+    check ts[1].kind == tkMinus
+    check ts[2].kind == tkSlash
+    check ts[3].kind == tkIdent

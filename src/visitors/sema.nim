@@ -68,14 +68,15 @@ proc foldInt(op: BinOp, a, b: int64, line, col: int): int64 =
     a mod b
 
 proc visitInt*(v: var SemaVisitor, n: Node) =
-  if v.ctx == nil:
-    n.typ = iLitType(n.intVal)
-  elif fits(iLitType(n.intVal), v.ctx):
-    n.typ = v.ctx
-  else:
+  # <NOTE>#11: literal keeps iLit under context; fits() is a check, not
+  # a coercion. Overwriting typ with ctx would lose the value and hide
+  # where narrowing would have to happen.
+  let lt = iLitType(n.intVal)
+  if v.ctx != nil and not fits(lt, v.ctx):
     raise lidwError(lekSema,
       "integer literal " & $n.intVal & " does not fit " & $v.ctx,
       n.line, n.col)
+  n.typ = lt
 
 proc visitFloat*(v: var SemaVisitor, n: Node) =
   # <TODO>#9: float types not in the system yet; leave typ nil.

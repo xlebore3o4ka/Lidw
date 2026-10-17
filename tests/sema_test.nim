@@ -202,3 +202,27 @@ suite "sema":
 
   test "unary minus on Bool is error":
     check expectSema("Bool b = 1 Int x = -b") == lekSema
+
+  test "nul fits nul":
+    let n = sema("1")
+    check n.stmts[0].typ.kind == tyILit
+
+  test "nul does not fit i64 context":
+    # we cannot yet produce a nul-typed value in source; this checks
+    # the fits table directly
+    check not fits(nulType(), i64Type())
+
+  test "i64 does not fit nul context":
+    check not fits(i64Type(), nulType())
+
+  test "iLit does not fit nul context":
+    check not fits(iLitType(0), nulType())
+
+  test "bool does not fit nul context":
+    check not fits(boolType(), nulType())
+
+  test "nul fits nul context":
+    check fits(nulType(), nulType())
+
+  test "nul does not fit bool context":
+    check not fits(nulType(), boolType())

@@ -6,12 +6,14 @@ type
     tyI64    ## concrete 64-bit signed integer
     tyILit   ## untyped integer literal (value known, bitness unknown)
     tyBool   ## boolean
+    tyNul    ## no value (statement position)
 
   LidwType* = ref object
     case kind*: TypeKind
     of tyI64: discard
     of tyILit: value*: int64
     of tyBool: discard
+    of tyNul: discard
 
 proc i64Type*(): LidwType =
   LidwType(kind: tyI64)
@@ -22,8 +24,12 @@ proc iLitType*(v: int64): LidwType =
 proc boolType*(): LidwType =
   LidwType(kind: tyBool)
 
+proc nulType*(): LidwType =
+  LidwType(kind: tyNul)
+
 proc `$`*(t: LidwType): string =
   case t.kind
   of tyI64: "i64"
   of tyILit: "iLit(" & $t.value & ")"
   of tyBool: "Bool"
+  of tyNul: "nul"

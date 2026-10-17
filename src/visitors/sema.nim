@@ -39,16 +39,25 @@ proc fits*(t, ctx: LidwType): bool =
     of tyI64:  true
     of tyILit: true          # int64 value always inside i64 range
     of tyBool: false         # need explicit comparison
+    of tyNul:  false
   of tyILit:
     case t.kind
     of tyILit: t.value == ctx.value
     of tyI64:  false
     of tyBool: false
+    of tyNul:  false
   of tyBool:
     case t.kind
     of tyBool: true
     of tyILit: true          # 0 = false, !=0 = true
     of tyI64:  false         # need explicit ==/!= to convert
+    of tyNul:  false
+  of tyNul:
+    case t.kind
+    of tyNul:  true
+    of tyBool: false
+    of tyILit: false
+    of tyI64:  false
 
 proc foldInt(op: BinOp, a, b: int64, line, col: int): int64 =
   ## Compute a op b; raise lekSema on overflow or division by zero.

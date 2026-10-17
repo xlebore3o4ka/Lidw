@@ -88,6 +88,17 @@ proc LLVMBuildNeg*(Builder: LLVMBuilderRef, V: LLVMValueRef,
                    Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildNeg".}
 
+# --- variables (opaque pointers, LLVM 15+) ---
+proc LLVMBuildAlloca*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,
+                      Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildAlloca".}
+proc LLVMBuildStore*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                     Ptr: LLVMValueRef): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildStore".}
+proc LLVMBuildLoad2*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,
+                     PointerVal: LLVMValueRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildLoad2".}
+
 # --- verification ---
 proc LLVMVerifyModule*(M: LLVMModuleRef,
                        Action: LLVMVerifierFailureAction,

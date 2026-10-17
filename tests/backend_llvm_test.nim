@@ -61,6 +61,59 @@ suite "llvm-c bindings":
     # LLVM IR builder constant-folds; no instruction survives.
     check "ret i64 3" in ir
 
+  test "emitModule decl alloca/store":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkInt, intVal: 10))
+    ])
+    let ir = emitModule(p)
+    check "alloca i64" in ir
+    check "store i64 10" in ir
+    check "ret i64 0" in ir       # decl has no value; main returns 0
+
+  test "emitModule decl then read":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkInt, intVal: 10)),
+      Node(kind: nkIdent, identName: "x")
+    ])
+    let ir = emitModule(p)
+    check "store i64 10" in ir
+    check "load i64" in ir
+    check "ret i64 %" in ir
+
+  test "emitModule decl no init defaults to 0":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int", declInit: nil)
+    ])
+    let ir = emitModule(p)
+    check "store i64 0" in ir
+
+  test "emitModule decl then add non-constant":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkInt, intVal: 10)),
+      Node(kind: nkBinOp, op: boAdd,
+        left: Node(kind: nkIdent, identName: "x"),
+        right: Node(kind: nkInt, intVal: 1))
+    ])
+    let ir = emitModule(p)
+    check "load i64" in ir
+    check "add i64 %" in ir
+
+  test "emitModule assign stores to same slot":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkInt, intVal: 10)),
+      Node(kind: nkAssign, assignName: "x",
+           assignValue: Node(kind: nkInt, intVal: 5)),
+      Node(kind: nkIdent, identName: "x")
+    ])
+    let ir = emitModule(p)
+    check "store i64 10" in ir
+    check "store i64 5" in ir
+    check "load i64" in ir
+
   test "main returns 42, verifies":
     let ctx = LLVMContextCreate()
     let llmod = LLVMModuleCreateWithNameInContext("lidw_test2", ctx)

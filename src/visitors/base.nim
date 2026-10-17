@@ -9,10 +9,14 @@ proc visit*[V](v: var V, n: Node) =
   ## each with signature (var V, Node).
   ## Recursion is the visitor's responsibility; no automatic walk.
   case n.kind
-  of nkInt:   v.visitInt(n)
-  of nkFloat: v.visitFloat(n)
-  of nkUnary: v.visitUnary(n)
-  of nkBinOp: v.visitBinOp(n)
+  of nkInt:    v.visitInt(n)
+  of nkFloat:  v.visitFloat(n)
+  of nkUnary:  v.visitUnary(n)
+  of nkBinOp:  v.visitBinOp(n)
+  of nkBlock:  v.visitBlock(n)
+  of nkDecl:   v.visitDecl(n)
+  of nkIdent:  v.visitIdent(n)
+  of nkAssign: v.visitAssign(n)
 
 when isMainModule:
   # smoke: prove dispatch type-checks; no real visitor yet.
@@ -21,6 +25,10 @@ when isMainModule:
   proc visitFloat*(v: var Noop, n: Node) = discard
   proc visitUnary*(v: var Noop, n: Node) = discard
   proc visitBinOp*(v: var Noop, n: Node) = discard
+  proc visitBlock*(v: var Noop, n: Node) = discard
+  proc visitDecl*(v: var Noop, n: Node) = discard
+  proc visitIdent*(v: var Noop, n: Node) = discard
+  proc visitAssign*(v: var Noop, n: Node) = discard
   var v: Noop
   let n = Node(kind: nkInt, intVal: 1)
   visit(v, n)

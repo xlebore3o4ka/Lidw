@@ -31,6 +31,7 @@ proc binOpFrom(kind: TokenKind): BinOp =
     raise newException(AssertionDefect, "binOpFrom: not a binary op: " & $kind)
 
 proc parseExpr(p: var Parser, minPrec: int): Node
+proc parseStmt(p: var Parser): Node
 
 proc parsePrimary(p: var Parser): Node =
   let t = p.peek()
@@ -42,15 +43,29 @@ proc parsePrimary(p: var Parser): Node =
   of tkFloat:
     p.advance()
     result = Node(kind: nkFloat, floatVal: t.floatVal, line: t.line, col: t.col)
-  of tkLParen:
+  of tkIdent:
     p.advance()
-    result = parseExpr(p, 0)
+    result = Node(kind: nkIdent, identName: t.word, line: t.line, col: t.col)
+  of tkType:
+    raise lidwError(lekParse, "expected expression, got type " & t.word,
+                    t.line, t.col)
+  of tkLParen:
+    let lparen = t
+    p.advance()
+    var stmts: seq[Node] = @[]
+    while p.peek().kind notin {tkRParen, tkEOF}:
+      stmts.add parseStmt(p)
     let closing = p.peek()
     if closing.kind != tkRParen:
-      let what = if closing.kind == tkEOF: "end of input" else: $closing
-      raise lidwError(lekParse, "expected ')' but got " & what,
+      raise lidwError(lekParse, "expected ')' but got end of input",
                       closing.line, closing.col)
     p.advance()
+    if stmts.len == 0:
+      raise lidwError(lekParse, "empty parentheses", lparen.line, lparen.col)
+    if stmts.len == 1:
+      result = stmts[0]
+    else:
+      result = Node(kind: nkBlock, stmts: stmts, line: lparen.line, col: lparen.col)
   else:
     raise lidwError(lekParse, "unexpected token: " & $t, t.line, t.col)
 
@@ -83,3 +98,49 @@ proc parse*(tokens: seq[Token]): Node =
   if trailing.kind != tkEOF:
     raise lidwError(lekParse, "unexpected token after expression: " & $trailing,
                     trailing.line, trailing.col)
+
+proc parseDecl(p: var Parser): Node =
+  let typeTok = p.peek()
+  p.advance()
+  let nameTok = p.peek()
+  if nameTok.kind != tkIdent:
+    raise lidwError(lekParse,
+      "expected identifier after type " & typeTok.word, nameTok.line, nameTok.col)
+  p.advance()
+  if p.peek().kind == tkEquals:
+    let eqTok = p.peek()
+    p.advance()
+    let iv = parseExpr(p, 0)
+    result = Node(kind: nkDecl, declName: nameTok.word, declType: typeTok.word,
+                  declInit: iv, line: eqTok.line, col: eqTok.col)
+  else:
+    result = Node(kind: nkDecl, declName: nameTok.word, declType: typeTok.word,
+                  declInit: nil, line: nameTok.line, col: nameTok.col)
+
+proc parseAssign(p: var Parser): Node =
+  let nameTok = p.peek()
+  p.advance()
+  let eqTok = p.peek()
+  p.advance()
+  let val = parseExpr(p, 0)
+  result = Node(kind: nkAssign, assignName: nameTok.word, assignValue: val,
+                line: eqTok.line, col: eqTok.col)
+
+proc parseStmt(p: var Parser): Node =
+  let t = p.peek()
+  if t.kind == tkType:
+    parseDecl(p)
+  elif t.kind == tkIdent and p.tokens[p.pos + 1].kind == tkEquals:
+    parseAssign(p)
+  else:
+    parseExpr(p, 0)
+
+proc parseProgram*(tokens: seq[Token]): Node =
+  var p = Parser(tokens: tokens, pos: 0)
+  var stmts: seq[Node] = @[]
+  while p.peek().kind != tkEOF:
+    stmts.add parseStmt(p)
+  if stmts.len > 0:
+    result = Node(kind: nkBlock, stmts: stmts, line: stmts[0].line, col: stmts[0].col)
+  else:
+    result = Node(kind: nkBlock, stmts: @[], line: 1, col: 1)

@@ -21,6 +21,10 @@ proc visitInt*(v: var SemaVisitor, n: Node)
 proc visitFloat*(v: var SemaVisitor, n: Node)
 proc visitUnary*(v: var SemaVisitor, n: Node)
 proc visitBinOp*(v: var SemaVisitor, n: Node)
+proc visitBlock*(v: var SemaVisitor, n: Node)
+proc visitDecl*(v: var SemaVisitor, n: Node)
+proc visitIdent*(v: var SemaVisitor, n: Node)
+proc visitAssign*(v: var SemaVisitor, n: Node)
 
 proc fits*(t, ctx: LidwType): bool =
   ## Does type t satisfy expected context ctx?
@@ -140,6 +144,24 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
         "right operand of " & opStr(n.op) & " has type " & $n.right.typ &
         ", expected " & $v.ctx, n.line, n.col)
     n.typ = v.ctx
+
+proc visitBlock*(v: var SemaVisitor, n: Node) =
+  for s in n.stmts:
+    visit(v, s)
+
+proc visitDecl*(v: var SemaVisitor, n: Node) =
+  # <TODO>#14: resolve declType, bind name, ctx for init — step 3
+  if n.declInit != nil:
+    visit(v, n.declInit)
+
+proc visitIdent*(v: var SemaVisitor, n: Node) =
+  # <TODO>#15: env lookup — step 3
+  raise lidwError(lekSema, "undefined variable: " & n.identName, n.line, n.col)
+
+proc visitAssign*(v: var SemaVisitor, n: Node) =
+  # <TODO>#16: env lookup + type check — step 3
+  visit(v, n.assignValue)
+  raise lidwError(lekSema, "undefined variable: " & n.assignName, n.line, n.col)
 
 proc runSema*(n: Node, ctx: LidwType = nil): Node =
   ## Run sema on n with the given context; types set in-place, n returned.

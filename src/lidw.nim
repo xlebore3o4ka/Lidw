@@ -31,7 +31,7 @@ proc main() =
       for t in lexAll(args[1]):
         echo $t, " @ ", t.line, ":", t.col
     of "ast":
-      echo $parse(lexAll(args[1]))
+      echo $parseProgram(lexAll(args[1]))
     of "check":
       var ctx: LidwType = nil
       var expr = ""
@@ -49,7 +49,7 @@ proc main() =
           expr = args[i]; i += 1
       if expr == "":
         stderr.writeLine "error: check requires an expression"; quit(1)
-      echo $runSema(parse(lexAll(expr)), ctx)
+      echo $runSema(parseProgram(lexAll(expr)), ctx)
     else:
       usage(); quit(1)
   except LidwError as e:

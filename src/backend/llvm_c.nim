@@ -157,6 +157,10 @@ proc LLVMAddIncoming*(PhiNode: LLVMValueRef,
                       Count: cuint)
   {.cdecl, importc: "LLVMAddIncoming".}
 
+proc LLVMPointerTypeInContext*(C: LLVMContextRef,
+                               AddressSpace: cuint): LLVMTypeRef
+  {.cdecl, importc: "LLVMPointerTypeInContext".}
+
 # --- call-related ---
 proc LLVMGetNamedFunction*(M: LLVMModuleRef, Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMGetNamedFunction".}

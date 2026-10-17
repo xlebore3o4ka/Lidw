@@ -171,7 +171,10 @@ proc render(n: Node, depth: int): string =
       parts.add pad & "  param:" & "\n" & render(p, depth + 2)
     parts.join("\n")
   of nkParam:
-    let mutMark = if n.paramMut == muImmutable: "!" else: ""
+    # <NOTE>#96: params are immutable by default. `$` is the only
+    # postfix; `!` on a param is redundant (parser accepts it as no-op
+    # for now, render doesn't show it).
+    let mutMark = if n.paramMut == muMutable: "$" else: ""
     let nameS = if n.paramName.len > 0: n.paramName & mutMark else: "_"
     pad & "param(" & nameS & ") @" & $n.line & ":" & $n.col & "\n" &
       render(n.paramType, depth + 1)

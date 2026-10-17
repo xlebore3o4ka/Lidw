@@ -149,6 +149,8 @@ proc toBool(c: var CodegenCtx, v: LLVMValueRef): LLVMValueRef =
 # emitExpr for values. Forward-declare emitStmt so both can coexist.
 proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef
 
+proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef
+
 proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   case n.kind
   of nkInt:
@@ -215,16 +217,17 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
     let fnT = n.callee.typ
     var argVals: seq[LLVMValueRef] = @[]
     for i, a in n.args:
-      argVals.add emitOperand(c, a, fnT.fnParams[i].kind)
-    var paramTys: seq[LLVMTypeRef] = @[]
-    for pt in fnT.fnParams:
-      paramTys.add llvmIntType(c, pt.kind)
-    let retTy = llvmIntType(c, fnT.fnRet.kind)
-    let llvmFnTy =
-      if paramTys.len == 0:
-        LLVMFunctionType(retTy, nil, 0, 0)
+      if fnT.fnParamsMut[i] == muMutable:
+        # <NOTE>#99: sema guarantees a.kind == nkIdent and mutable.
+        # Pass the caller's alloca ptr.
+        let slot = c.lookupVar(a.identName)
+        if slot == nil:
+          raise newException(ValueError,
+            "codegen: mutable arg without slot: " & a.identName)
+        argVals.add slot
       else:
-        LLVMFunctionType(retTy, addr paramTys[0], cuint(paramTys.len), 0)
+        argVals.add emitOperand(c, a, fnT.fnParams[i].kind)
+    let llvmFnTy = fnLLVMType(c, fnT)
     if argVals.len == 0:
       LLVMBuildCall2(c.builder, llvmFnTy, fnVal, nil, 0, "call")
     else:
@@ -458,9 +461,15 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       "codegen: unsupported statement: " & $n.kind)
 
 proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef =
+  # <NOTE>#97: mutable params are passed as `ptr`. Caller takes address
+  # of its alloca; callee writes through the pointer. Immutable params
+  # stay by-value.
   var paramTys: seq[LLVMTypeRef] = @[]
-  for pt in fnT.fnParams:
-    paramTys.add llvmIntType(c, pt.kind)
+  for i, pt in fnT.fnParams:
+    if fnT.fnParamsMut[i] == muMutable:
+      paramTys.add LLVMPointerTypeInContext(c.ctx, 0)
+    else:
+      paramTys.add llvmIntType(c, pt.kind)
   let retTy = llvmIntType(c, fnT.fnRet.kind)
   if paramTys.len == 0:
     LLVMFunctionType(retTy, nil, 0, 0)
@@ -484,11 +493,17 @@ proc emitFnBody(c: var CodegenCtx, decl: Node) =
   for i, p in decl.declTypeNode.fnParams:
     let ty = llvmIntType(c, decl.typ.fnParams[i].kind)
     let paramVal = LLVMGetParam(fnVal, cuint(i))
-    let nameC = if p.paramName.len > 0: p.paramName.cstring else: "arg".cstring
-    let slot = LLVMBuildAlloca(c.builder, ty, nameC)
-    discard LLVMBuildStore(c.builder, paramVal, slot)
-    if p.paramName.len > 0:
-      c.defineVar(p.paramName, slot, ty)
+    if p.paramMut == muMutable:
+      # <NOTE>#98: mutable param arrives as `ptr iN`. Bind it as-is;
+      # loads/stores go through the pointer to caller's alloca.
+      if p.paramName.len > 0:
+        c.defineVar(p.paramName, paramVal, ty)
+    else:
+      let nameC = if p.paramName.len > 0: p.paramName.cstring else: "arg".cstring
+      let slot = LLVMBuildAlloca(c.builder, ty, nameC)
+      discard LLVMBuildStore(c.builder, paramVal, slot)
+      if p.paramName.len > 0:
+        c.defineVar(p.paramName, slot, ty)
   let bodyVal = emitExpr(c, decl.declInit)
   discard LLVMBuildRet(c.builder, bodyVal)
   c.scopes.setLen(c.scopes.len - 1)

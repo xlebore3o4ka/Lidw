@@ -14,8 +14,8 @@ build actually understands.
 | Assignment         |   ok   |  ok   |   —     |
 | Mutability         |   ok   |  ok   |   —     |
 | Blocks & scope     |   ok   |  ok   |   —     |
-| `if`/`elif`/`else` |   ok   | WIP   |   —     |
-| `is`               |   ok   | WIP   |   —     |
+| `if`/`elif`/`else` |   ok   |  ok   |   —     |
+| `is`               |   ok   |  ok   |   —     |
 | Functions          |   —    |  —    |   —     |
 | Comments           |   —    |  —    |   —     |
 | Strings            |   —    |  —    |   —     |
@@ -30,10 +30,10 @@ with `lekSema`. `—`: not implemented at all.
 - [syntax.md](syntax.md) — lexical structure
 - [types.md](types.md) — type system
 - [declarations.md](declarations.md) — variables, mutability
-- [expressions.md](expressions.md) — operators and evaluation
+- [expressions.md](expressions.md) — operators, if, is
 - [blocks.md](blocks.md) — grouping, blocks, scope
 - [errors.md](errors.md) — error kinds and messages
-- [planned.md](planned.md) — in-progress and not started
+- [planned.md](planned.md) — not started
 
 ## Tools
 

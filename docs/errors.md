@@ -25,6 +25,8 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
 
 ## Sema errors (`lekSema`)
 
+### Names and declarations
+
 - `undefined variable: <name>` — name read before it is declared.
 - `unknown type: <name>` — `resolveTypeName` has no alias for it.
 - `redeclaration of <name> (previously declared at L:C)` — same
@@ -34,8 +36,26 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
   does not fit declared type.
 - `cannot assign <got> to <type> variable <name>` — assignment
   type mismatch.
+
+### Blocks and `is`
+
 - `block has no value, expected <type>` — block without `is` in
   value position.
+- `block yields <type>, expected <type>` — `is`-value in block does
+  not fit the declaration context.
+- `is outside block (use ...)` — `is` at program root, or directly
+  in an `if` branch without parentheses.
+- `unreachable statement after is` — any statement after `is` in
+  the same block.
+
+### `if`
+
+- `if condition has type <type>, expected Bool` — `Int c = 1; if c ...`.
+- `if branch yields <type>, expected <type>` — under declaration
+  context, one branch does not fit `ctx`.
+
+### Operators
+
 - `cannot unify <lt> and <rt> for <op>` — binary operator with
   incompatible operand types.
 - `operator <op> requires Int operands, got <lt> and <rt>` —

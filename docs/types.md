@@ -20,14 +20,24 @@ with `x == 0` or `x != 0`, not `Bool b = x`.
 
 ### `Nul`
 
-"No value". The type of a statement that produces nothing. `Nul` is
-not a user-writable type name; it appears only in sema output.
+"No value". The type of an expression in statement position, and of
+`if` without a value context.
 
-A block without `is` and outside an expected type yields `Nul`.
+`Nul` is not a user-writable type name; it appears only in sema
+output (`[nul]`).
+
+```
+if 1 1 else 0        # if [nul] (statement)
+(1 2)                # block [nul] (no is)
+```
 
 `Nul` fits only into `Nul`. It does not fit into `Int`, `Bool`, or
-anything else. So `Int x = (1 2)` is a sema error, and `(1 2) + 1`
-is a sema error.
+anything else:
+
+```
+Int x = (1 2)        # sema error: block has no value, expected i64
+(1 2) + 1            # sema error: cannot unify nul and iLit(1)
+```
 
 ## The literal type `iLit(N)`
 
@@ -61,7 +71,7 @@ where `expected` is required.
 
 `fits` is a **check**, not a coercion. A literal that fits into `Int`
 stays `iLit(N)` in the AST. Only the surrounding operation (decl,
-comparison, assignment) gets the concrete type.
+comparison, assignment, branch) gets the concrete type.
 
 ## Type resolution
 

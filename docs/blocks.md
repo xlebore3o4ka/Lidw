@@ -13,10 +13,9 @@ The same parentheses play two roles:
 (1 + 2; 3)      # block: stmts [binOp(+), nkInt(3)]
 ```
 
-A block's yield is `nul` unless it contains `is` (see
-[planned.md](planned.md)) or is used as a declaration initializer.
-Under a declaration initializer without `is`, sema reports
-`block has no value`.
+A block's yield is `Nul` unless it contains `is`, or unless it is
+used as a declaration initializer with `is`. Without `is` under a
+declaration context, sema reports `block has no value`.
 
 ## Scope
 
@@ -37,20 +36,51 @@ Int x = 10
 
 ## `is` in a block
 
-`is expr` yields a value from its innermost enclosing block. Parsing
-is implemented; sema is not yet (see [planned.md](planned.md)).
-
-Parentheses are not required if `is` appears directly in a block body:
+`is expr` yields `expr` from its innermost enclosing block:
 
 ```
-(x is 1)               # block with one stmt `is 1` (kept as block)
-if c; is 1; else; is 2
+Int x = (Int y = 10; is y)     # x = y, x : Int
+(1; is 2)                      # block [iLit(2)]
 ```
 
-`( is 1 )` is *always* parsed as a block, not grouping, so `is` has a
-block to yield from.
+Rules enforced by sema:
+
+- `is` must be inside a real block. `(is 1)` works; `is 1` at the
+  program root fails with `is outside block`.
+- `(is 1)` is *always* parsed as a block, not grouping, so `is` has
+  a block to yield from.
+- A block yields the type of `is`'s argument. Under a declaration
+  context, it must fit `ctx`:
+  ```
+  Int x = (is 5)         # ok, block yields iLit(5) fits i64
+  Bool b = (is 5)        # sema error: iLit(5) does not fit Bool? no —
+                         # iLit fits Bool (5 is true); block yields true
+  ```
+- Statements after `is` in the same block are unreachable and
+  rejected: `(is 1; 2)` → `unreachable statement after is`.
+
+## `if` branches are not blocks
+
+An `if` branch accepts a single expression:
+
+```
+if c 1 else 0
+```
+
+To use `is` inside a branch, wrap in parentheses so the branch
+becomes a block:
+
+```
+Int x = if c; (is 1); else; (is 2)     # ok
+Int x = if c; is 1; else; is 2         # sema error: is outside block
+```
 
 ## Root program
 
-The whole program is a block (statement sequence). Its type is `Nul`.
+The whole program is a `nkProgram` node, not an `nkBlock`. Its type
+is `Nul`. Differences from a block:
+
+- No yield scope for `is`: `is 1` at the top level is an error.
+- The root scope holds top-level declarations, closed at program end.
+
 Declarations inside execute in order; no `main` function.

@@ -45,6 +45,36 @@ proc cmpPredicate(op: BinOp): cint =
   else:
     raise newException(ValueError, "cmpPredicate: not a comparison: " & opStr(op))
 
+proc kindFromTypeName(name: string): TypeKind =
+  ## <NOTE>#68: fallback for unit tests that build nkDecl by hand,
+  ## bypassing sema. In normal flow n.typ is always set.
+  case name
+  of "Int", "I64": tyI64
+  of "I8": tyI8
+  of "U8": tyU8
+  of "I16": tyI16
+  of "U16": tyU16
+  of "I32": tyI32
+  of "U32": tyU32
+  of "U64": tyU64
+  of "Bool": tyBool
+  else:
+    raise newException(ValueError,
+      "codegen: unknown declared type: " & name)
+
+proc llvmIntType(c: CodegenCtx, kind: TypeKind): LLVMTypeRef =
+  ## <NOTE>#64: LLVM has one iN per width; signedness matters only in
+  ## operations (sdiv/udiv, icmp slt/ult), not in the type itself.
+  case kind
+  of tyI8, tyU8:   LLVMIntTypeInContext(c.ctx, 8)
+  of tyI16, tyU16: LLVMIntTypeInContext(c.ctx, 16)
+  of tyI32, tyU32: LLVMIntTypeInContext(c.ctx, 32)
+  of tyI64, tyU64: c.i64
+  of tyBool:       c.i1
+  else:
+    raise newException(AssertionDefect,
+      "llvmIntType: not an int kind: " & $kind)
+
 proc toBool(c: var CodegenCtx, v: LLVMValueRef): LLVMValueRef =
   ## Convert i64 value to i1 (non-zero = true).
   LLVMBuildICmp(c.builder, LLVMIntNE, v, LLVMConstInt(c.i64, 0, 0), "to_bool")
@@ -182,27 +212,32 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   of nkDecl:
     # <TODO>#41: alloca in current block; for non-linear control flow
     # these must go to the entry block.
-    # <TODO>#56: narrow int types are not yet supported in codegen; see 7d.
-    let llvmTy =
-      case n.declType
-      of "Bool": c.i1
-      of "Int", "I64": c.i64
-      of "I8", "U8", "I16", "U16", "I32", "U32", "U64":
-        raise newException(ValueError,
-          "codegen: narrow int types not supported yet: " & n.declType)
-      else:
-        raise newException(ValueError,
-          "codegen: unknown declared type: " & n.declType)
+    let declKind =
+      if n.typ != nil: n.typ.kind
+      else: kindFromTypeName(n.declType)
+    let llvmTy = llvmIntType(c, declKind)
     let slot = LLVMBuildAlloca(c.builder, llvmTy, n.declName.cstring)
     c.defineVar(n.declName, slot, llvmTy)
     var initVal: LLVMValueRef
     if n.declInit == nil:
       initVal = LLVMConstInt(llvmTy, 0, 0)
+    elif n.declInit.kind == nkInt:
+      initVal = LLVMConstInt(llvmTy,
+        cast[culonglong](n.declInit.intVal), 0)
+    elif n.declInit.typ != nil and n.declInit.typ.kind == tyILit:
+      # <NOTE>#65: sema-folded literal (nkUnary(-int), folded nkBinOp)
+      # carries its final value in typ as iLit(N). Emit at slot width.
+      initVal = LLVMConstInt(llvmTy,
+        cast[culonglong](n.declInit.typ.value), 0)
     else:
       initVal = emitExpr(c, n.declInit)
-      let initIsBool = n.declInit.typ != nil and n.declInit.typ.kind == tyBool
-      if llvmTy == c.i1 and not initIsBool:
-        initVal = toBool(c, initVal)
+      # <TODO>#66: coerce concrete source to slot width (7d-2). Check
+      # only when both types are known; unit tests may leave typ nil.
+      if n.declInit.typ != nil and n.typ != nil and
+         n.declInit.typ.kind != n.typ.kind:
+        raise newException(ValueError,
+          "codegen: mismatched init type not supported yet (7d-2): " &
+          $n.declInit.typ.kind & " -> " & $n.typ.kind)
     discard LLVMBuildStore(c.builder, initVal, slot)
     nil
   of nkAssign:
@@ -211,10 +246,22 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       raise newException(ValueError,
         "codegen: assign to undeclared: " & n.assignName)
     let llvmTy = c.lookupVarType(n.assignName, c.i64)
-    var val = emitExpr(c, n.assignValue)
-    let valIsBool = n.assignValue.typ != nil and n.assignValue.typ.kind == tyBool
-    if llvmTy == c.i1 and not valIsBool:
-      val = toBool(c, val)
+    var val: LLVMValueRef
+    if n.assignValue.kind == nkInt:
+      val = LLVMConstInt(llvmTy,
+        cast[culonglong](n.assignValue.intVal), 0)
+    elif n.assignValue.typ != nil and n.assignValue.typ.kind == tyILit:
+      val = LLVMConstInt(llvmTy,
+        cast[culonglong](n.assignValue.typ.value), 0)
+    else:
+      val = emitExpr(c, n.assignValue)
+      # <TODO>#66: coerce concrete source to slot width (7d-2). Check
+      # only when both types are known.
+      if n.assignValue.typ != nil and n.typ != nil and
+         n.assignValue.typ.kind != n.typ.kind:
+        raise newException(ValueError,
+          "codegen: mismatched assign type not supported yet (7d-2): " &
+          $n.assignValue.typ.kind & " -> " & $n.typ.kind)
     discard LLVMBuildStore(c.builder, val, slot)
     nil
   of nkInt, nkIdent, nkUnary, nkBinOp:
@@ -292,17 +339,25 @@ proc emitModule*(program: Node): string =
                      varTypes: @[initTable[string, LLVMTypeRef]()])
 
   var retVal: LLVMValueRef = nil
-  var retIsBool = false
+  var retType: LidwType = nil
   if program.kind == nkProgram:
     for stmt in program.stmts:
       let v = emitStmt(c, stmt)
       if v != nil:
         retVal = v
-        retIsBool = stmt.typ != nil and stmt.typ.kind == tyBool
+        retType = stmt.typ
   if retVal == nil:
     retVal = LLVMConstInt(i64, 0, 0)
-  elif retIsBool:
-    retVal = LLVMBuildZExt(builder, retVal, i64, "bool_to_i64")
+  elif retType != nil:
+    if retType.kind == tyBool:
+      retVal = LLVMBuildZExt(builder, retVal, i64, "bool_to_i64")
+    elif retType.kind in IntKinds and retType.kind != tyI64:
+      # <NOTE>#67: main returns i64; narrow results are extended by
+      # signedness. Unsigned uses zext, signed uses sext.
+      if isSigned(retType):
+        retVal = LLVMBuildSExt(builder, retVal, i64, "ret_sext")
+      else:
+        retVal = LLVMBuildZExt(builder, retVal, i64, "ret_zext")
   discard LLVMBuildRet(builder, retVal)
 
   var errMsg: cstring = nil

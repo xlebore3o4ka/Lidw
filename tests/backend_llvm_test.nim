@@ -152,16 +152,14 @@ suite "llvm-c bindings":
     except ValueError as e:
       check "width-changing cast" in e.msg
 
-  test "emitModule narrow decl rejected in codegen":
+  test "emitModule narrow decl allocates i8":
     let p = Node(kind: nkProgram, stmts: @[
       Node(kind: nkDecl, declName: "x", declType: "U8",
            declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))
     ])
-    try:
-      discard emitModule(p)
-      check false
-    except ValueError as e:
-      check "narrow int types not supported yet" in e.msg
+    let ir = emitModule(p)
+    check "alloca i8" in ir
+    check "store i8 5" in ir
 
   test "emitModule Bool decl no init stores i1 false":
     let p = Node(kind: nkProgram, stmts: @[

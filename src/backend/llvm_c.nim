@@ -112,6 +112,14 @@ const
 
 proc LLVMInt1TypeInContext*(C: LLVMContextRef): LLVMTypeRef
   {.cdecl, importc: "LLVMInt1TypeInContext".}
+proc LLVMIntTypeInContext*(C: LLVMContextRef, NumBits: cuint): LLVMTypeRef
+  {.cdecl, importc: "LLVMIntTypeInContext".}
+proc LLVMBuildTrunc*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                     DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildTrunc".}
+proc LLVMBuildSExt*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                    DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildSExt".}
 proc LLVMBuildICmp*(Builder: LLVMBuilderRef, Op: cint,
                     LHS, RHS: LLVMValueRef, Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildICmp".}

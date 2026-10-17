@@ -75,3 +75,19 @@ suite "lexer":
     except LidwError as e:
       check e.kind == lekLex
       check e.line == 1 and e.col == 1
+
+  test "bang and dollar tokens":
+    check lexAll("!")[0].kind == tkBang
+    check lexAll("$")[0].kind == tkDollar
+    let ts = lexAll("Int x! = 10")
+    check ts.len == 6
+    check ts[0].kind == tkType
+    check ts[1].kind == tkIdent and ts[1].word == "x"
+    check ts[2].kind == tkBang
+    check ts[3].kind == tkEquals
+    check ts[4].kind == tkInt and ts[4].intVal == 10
+    check ts[5].kind == tkEOF
+
+  test "dollar in decl position":
+    let ts = lexAll("Int x$ = 10")
+    check ts[2].kind == tkDollar

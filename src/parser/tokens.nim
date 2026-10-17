@@ -16,6 +16,8 @@ type
     tkType       ## uppercase-initial word: type name
     tkEquals     ## =
     tkSemicolon  ## ; optional statement separator
+    tkBang       ## ! mutability marker
+    tkDollar     ## $ mutability marker
     tkEOF        ## end of input
 
   Token* = object
@@ -42,4 +44,6 @@ proc `$`*(t: Token): string =
     of tkType:    "tkType(" & t.word & ")"
     of tkEquals:  "tkEquals"
     of tkSemicolon: "tkSemicolon"
+    of tkBang:    "tkBang"
+    of tkDollar:  "tkDollar"
     of tkEOF:     "tkEOF"

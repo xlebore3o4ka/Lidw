@@ -359,6 +359,58 @@ suite "sema":
     check n.stmts[1].typ.kind == tyU8
 
   test "arithmetic on narrow not yet supported":
-    check expectSema("U8 x = 5 x + 1") == lekSema
     # U8(0) is not a cast yet; U8 followed by ( is a parse error.
     check expectSema("Bool b = U8(0) < 1") == lekParse
+
+  test "arithmetic on narrow: same type":
+    let n = sema("U8 x = 5 U8 y = 6 x + y")
+    check n.stmts[2].kind == nkBinOp
+    check n.stmts[2].typ.kind == tyU8
+
+  test "arithmetic on narrow: iLit adapts to narrow":
+    let n = sema("U8 x = 5 x + 1")
+    check n.stmts[1].typ.kind == tyU8
+
+  test "arithmetic on narrow: iLit out of range":
+    check expectSema("U8 x = 5 x + 300") == lekSema
+
+  test "arithmetic on narrow: U8 + I8 = I16":
+    let n = sema("U8 x = 5 I8 y = -1 x + y")
+    check n.stmts[2].typ.kind == tyI16
+
+  test "arithmetic on narrow: U8 + I16 = I16":
+    let n = sema("U8 x = 5 I16 y = 100 x + y")
+    check n.stmts[2].typ.kind == tyI16
+
+  test "arithmetic on narrow: U8 + U16 = U16":
+    let n = sema("U8 x = 5 U16 y = 100 x + y")
+    check n.stmts[2].typ.kind == tyU16
+
+  test "arithmetic on narrow: U16 + I16 = I32":
+    let n = sema("U16 x = 100 I16 y = 100 x + y")
+    check n.stmts[2].typ.kind == tyI32
+
+  test "arithmetic on narrow: U32 + I32 = I64":
+    let n = sema("U32 x = 1 I32 y = 1 x + y")
+    check n.stmts[2].typ.kind == tyI64
+
+  test "arithmetic on narrow: U64 + I64 no common type":
+    check expectSema("U64 x = 1 I64 y = 1 x + y") == lekSema
+
+  test "comparison on narrow same type":
+    let n = sema("U8 x = 5 U8 y = 6 Bool b = x < y")
+    check n.stmts[2].declInit.typ.kind == tyBool
+
+  test "comparison on narrow iLit adapts":
+    let n = sema("U8 x = 5 Bool b = x < 10")
+    check n.stmts[1].declInit.typ.kind == tyBool
+
+  test "comparison on narrow iLit out of range":
+    check expectSema("U8 x = 5 Bool b = x < 300") == lekSema
+
+  test "comparison on narrow mixed signed/unsigned":
+    let n = sema("U8 x = 5 I8 y = -1 Bool b = x < y")
+    check n.stmts[2].declInit.typ.kind == tyBool
+
+  test "arithmetic on Bool still rejected":
+    check expectSema("Bool b = 1 Bool c = b + 1") == lekSema

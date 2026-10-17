@@ -159,42 +159,111 @@ proc isComparison(o: BinOp): bool =
 proc isOrdering(o: BinOp): bool =
   o in {boLt, boLe, boGt, boGe}
 
+proc bitWidthAt(k: TypeKind): int =
+  case k
+  of tyI8, tyU8: 8
+  of tyI16, tyU16: 16
+  of tyI32, tyU32: 32
+  of tyI64, tyU64: 64
+  else:
+    raise newException(AssertionDefect, "bitWidthAt: not an int kind: " & $k)
+
+proc promoteIntKinds(a, b: TypeKind, line, col: int): TypeKind =
+  ## <NOTE>#58: common type for arithmetic on two concrete Int kinds.
+  ## Same -> same; both signed / both unsigned -> wider; mixed -> the
+  ## smallest signed type that holds both (width = max(signed, unsigned+1),
+  ## rounded up to 8/16/32/64). 65+ bits has no common type.
+  if a == b: return a
+  let aSig = a in {tyI8, tyI16, tyI32, tyI64}
+  let bSig = b in {tyI8, tyI16, tyI32, tyI64}
+  if aSig == bSig:
+    return if bitWidthAt(a) >= bitWidthAt(b): a else: b
+  let sKind = if aSig: a else: b
+  let uKind = if aSig: b else: a
+  let c = max(bitWidthAt(sKind), bitWidthAt(uKind) + 1)
+  case c
+  of 1..8: tyI8
+  of 9..16: tyI16
+  of 17..32: tyI32
+  of 33..64: tyI64
+  else:
+    raise lidwError(lekSema,
+      "no common type for " & $intType(a) & " and " & $intType(b),
+      line, col)
+
+proc unifyInts(a, b: LidwType, line, col: int): LidwType =
+  ## <NOTE>#59: common type of arithmetic operands. Caller handles the
+  ## both-iLit case (fold) before calling. Bool, Nul, and other non-Int
+  ## do not unify.
+  if a.kind == tyILit:
+    if b.kind notin IntKinds:
+      raise lidwError(lekSema,
+        "arithmetic requires Int, got " & $a & " and " & $b, line, col)
+    if not fitsIntLit(a.value, b.kind):
+      raise lidwError(lekSema,
+        "literal " & $a & " does not fit " & $b, line, col)
+    return b
+  if b.kind == tyILit:
+    if a.kind notin IntKinds:
+      raise lidwError(lekSema,
+        "arithmetic requires Int, got " & $a & " and " & $b, line, col)
+    if not fitsIntLit(b.value, a.kind):
+      raise lidwError(lekSema,
+        "literal " & $b & " does not fit " & $a, line, col)
+    return a
+  if a.kind notin IntKinds or b.kind notin IntKinds:
+    raise lidwError(lekSema,
+      "arithmetic requires Int, got " & $a & " and " & $b, line, col)
+  intType(promoteIntKinds(a.kind, b.kind, line, col))
+
 proc visitBinOp*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#60: operands are visited without ctx; the operator decides
+  # the common type, then the result is checked against ctx.
+  let saveCtx = v.ctx
+  v.ctx = nil
   visit(v, n.left)
   visit(v, n.right)
+  v.ctx = saveCtx
 
   if isComparison(n.op):
-    # <NOTE>#26: comparisons produce Bool. Equality accepts (Int, iLit)
-    # or (Bool, iLit); ordering accepts Int operands only. No value
-    # folding: we keep Bool without a literal payload.
+    # <NOTE>#26: comparisons produce Bool. Equality accepts Int/Int,
+    # Int/iLit, Bool/Bool, Bool/iLit. Ordering accepts Int/iLit only.
     let lk = n.left.typ.kind
     let rk = n.right.typ.kind
-    let bothInt = lk in {tyI64, tyILit} and rk in {tyI64, tyILit}
-    if isOrdering(n.op):
-      if not bothInt:
+    let lIsBool = lk == tyBool
+    let rIsBool = rk == tyBool
+    if lIsBool or rIsBool:
+      if isOrdering(n.op):
         raise lidwError(lekSema,
           "operator " & opStr(n.op) & " requires Int operands, got " &
           $n.left.typ & " and " & $n.right.typ, n.line, n.col)
-    else:
-      let eqOk = bothInt or
-                 (lk == tyBool and rk in {tyBool, tyILit}) or
-                 (rk == tyBool and lk in {tyBool, tyILit})
-      if not eqOk:
+      if lIsBool and (rIsBool or rk == tyILit): discard
+      elif rIsBool and lk == tyILit: discard
+      else:
         raise lidwError(lekSema,
           "operator " & opStr(n.op) & " requires matching types, got " &
           $n.left.typ & " and " & $n.right.typ, n.line, n.col)
+    else:
+      let lIsInt = lk in IntKinds or lk == tyILit
+      let rIsInt = rk in IntKinds or rk == tyILit
+      if not lIsInt or not rIsInt:
+        raise lidwError(lekSema,
+          "operator " & opStr(n.op) & " requires Int or Bool operands, got " &
+          $n.left.typ & " and " & $n.right.typ, n.line, n.col)
+      let bothLit = lk == tyILit and rk == tyILit
+      if not bothLit:
+        discard unifyInts(n.left.typ, n.right.typ, n.line, n.col)
     n.typ = boolType()
     if v.ctx != nil and not fits(n.typ, v.ctx):
       raise lidwError(lekSema,
         "comparison result Bool does not fit " & $v.ctx, n.line, n.col)
     return
 
+  # Arithmetic: + - * / %
   let bothLit = n.left.typ.kind == tyILit and n.right.typ.kind == tyILit
-
   if bothLit:
-    # <NOTE>#12: literals fold through binary op regardless of context.
-    # Context only checks the folded value fits; it never coerces the
-    # result to a concrete type.
+    # <NOTE>#12: literals fold regardless of context; ctx only checks
+    # that the folded value fits.
     let res = foldInt(n.op, n.left.typ.value, n.right.typ.value, n.line, n.col)
     let lt = iLitType(res)
     if v.ctx != nil and not fits(lt, v.ctx):
@@ -202,15 +271,7 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
         "literal " & $lt & " does not fit " & $v.ctx, n.line, n.col)
     n.typ = lt
   else:
-    # <NOTE>#20: at least one operand is concrete; unify operands.
-    # i64 beats iLit; anything else is a type mismatch.
-    let unified =
-      if n.left.typ.kind == tyI64 or n.right.typ.kind == tyI64: i64Type()
-      else: nil
-    if unified == nil:
-      raise lidwError(lekSema,
-        "cannot unify " & $n.left.typ & " and " & $n.right.typ &
-        " for " & opStr(n.op), n.line, n.col)
+    let unified = unifyInts(n.left.typ, n.right.typ, n.line, n.col)
     if v.ctx != nil and not fits(unified, v.ctx):
       raise lidwError(lekSema,
         "expression type " & $unified & " does not fit " & $v.ctx,

@@ -24,6 +24,10 @@ type
     tkLe         ## <=
     tkGt         ## >
     tkGe         ## >=
+    tkIf         ## if
+    tkElif       ## elif
+    tkElse       ## else
+    tkIs         ## is
     tkEOF        ## end of input
 
   Token* = object
@@ -58,4 +62,8 @@ proc `$`*(t: Token): string =
     of tkLe:      "tkLe"
     of tkGt:      "tkGt"
     of tkGe:      "tkGe"
+    of tkIf:      "tkIf"
+    of tkElif:    "tkElif"
+    of tkElse:    "tkElse"
+    of tkIs:      "tkIs"
     of tkEOF:     "tkEOF"

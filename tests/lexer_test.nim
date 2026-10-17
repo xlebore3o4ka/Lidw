@@ -107,3 +107,27 @@ suite "lexer":
     let ts = lexAll("x! = y")
     check ts[1].kind == tkBang
     check ts[2].kind == tkEquals
+
+  test "if/elif/else/is are keywords":
+    check lexAll("if")[0].kind == tkIf
+    check lexAll("elif")[0].kind == tkElif
+    check lexAll("else")[0].kind == tkElse
+    check lexAll("is")[0].kind == tkIs
+
+  test "uppercase If is a type, not keyword":
+    check lexAll("If")[0].kind == tkType
+    check lexAll("Else")[0].kind == tkType
+    check lexAll("Is")[0].kind == tkType
+
+  test "if-else-if lexes as three keywords":
+    let ts = lexAll("if else elif is")
+    check ts[0].kind == tkIf
+    check ts[1].kind == tkElse
+    check ts[2].kind == tkElif
+    check ts[3].kind == tkIs
+    check ts[4].kind == tkEOF
+
+  test "word does not prefix-match keyword":
+    check lexAll("iff")[0].kind == tkIdent
+    check lexAll("elsewhere")[0].kind == tkIdent
+    check lexAll("issue")[0].kind == tkIdent

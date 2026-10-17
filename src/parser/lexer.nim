@@ -61,6 +61,8 @@ proc lexNumber(l: var Lexer): Token =
   else:
     Token(kind: tkInt, intVal: parseInt(s).int64, line: startLine, col: startCol)
 
+# <NOTE>#28: lowercase keywords; uppercase forms (If, Else) stay tkType.
+# wordKind is the fallback for non-keyword words.
 proc lexWord(l: var Lexer): Token =
   let startLine = l.line
   let startCol = l.col
@@ -68,7 +70,14 @@ proc lexWord(l: var Lexer): Token =
   while l.pos < l.src.len and isIdentChar(l.src[l.pos]):
     s.add l.src[l.pos]
     l.adv()
-  Token(kind: wordKind(s[0]), word: s, line: startLine, col: startCol)
+  let kind =
+    case s
+    of "if":   tkIf
+    of "elif": tkElif
+    of "else": tkElse
+    of "is":   tkIs
+    else:      wordKind(s[0])
+  Token(kind: kind, word: s, line: startLine, col: startCol)
 
 proc lexAll*(src: string): seq[Token] =
   var l = initLexer(src)

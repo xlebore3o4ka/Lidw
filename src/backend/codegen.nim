@@ -34,16 +34,98 @@ proc defineVar(c: var CodegenCtx, name: string, slot: LLVMValueRef,
   c.scopes[^1][name] = slot
   c.varTypes[^1][name] = ty
 
-proc cmpPredicate(op: BinOp): cint =
+proc llvmIntType(c: CodegenCtx, kind: TypeKind): LLVMTypeRef
+
+proc kindSigned(k: TypeKind): bool =
+  k in {tyI8, tyI16, tyI32, tyI64}
+
+proc kindBitWidth(k: TypeKind): int =
+  case k
+  of tyI8, tyU8: 8
+  of tyI16, tyU16: 16
+  of tyI32, tyU32: 32
+  of tyI64, tyU64: 64
+  else:
+    raise newException(AssertionDefect,
+      "kindBitWidth: not an int kind: " & $k)
+
+proc cmpPredicate(op: BinOp, targetKind: TypeKind): cint =
+  # <NOTE>#69: signedness of the target kind picks slt/ult family.
+  # Eq/Ne are sign-agnostic. Bool comparisons come here with target
+  # kind Bool; only Eq/Ne reach this path (ordering on Bool is a
+  # sema error).
+  if targetKind == tyBool:
+    case op
+    of boEq: return LLVMIntEQ
+    of boNe: return LLVMIntNE
+    else:
+      raise newException(ValueError,
+        "cmpPredicate: Bool with " & opStr(op))
+  let signed = kindSigned(targetKind)
   case op
   of boEq: LLVMIntEQ
   of boNe: LLVMIntNE
-  of boLt: LLVMIntSLT
-  of boLe: LLVMIntSLE
-  of boGt: LLVMIntSGT
-  of boGe: LLVMIntSGE
+  of boLt: (if signed: LLVMIntSLT else: LLVMIntULT)
+  of boLe: (if signed: LLVMIntSLE else: LLVMIntULE)
+  of boGt: (if signed: LLVMIntSGT else: LLVMIntUGT)
+  of boGe: (if signed: LLVMIntSGE else: LLVMIntUGE)
   else:
-    raise newException(ValueError, "cmpPredicate: not a comparison: " & opStr(op))
+    raise newException(ValueError,
+      "cmpPredicate: not a comparison: " & opStr(op))
+
+proc promoteIntKindsCG(a, b: TypeKind): TypeKind =
+  ## <NOTE>#70: mirrors sema promoteIntKinds; codegen needs the common
+  ## kind to pick one LLVM width for both operands.
+  if a == b: return a
+  let aSig = kindSigned(a)
+  let bSig = kindSigned(b)
+  if aSig == bSig:
+    return if kindBitWidth(a) >= kindBitWidth(b): a else: b
+  let sKind = if aSig: a else: b
+  let uKind = if aSig: b else: a
+  let c = max(kindBitWidth(sKind), kindBitWidth(uKind) + 1)
+  case c
+  of 1..8: tyI8
+  of 9..16: tyI16
+  of 17..32: tyI32
+  of 33..64: tyI64
+  else:
+    raise newException(ValueError,
+      "codegen: no common kind for " & $a & " and " & $b)
+
+proc commonKindFor(a, b: LidwType): TypeKind =
+  ## <NOTE>#71: common Int kind for a comparison. Both operands are
+  ## Int or iLit here (Bool handled separately; sema rejected the rest).
+  if a.kind == tyILit and b.kind == tyILit: return tyI64
+  if a.kind == tyILit: return b.kind
+  if b.kind == tyILit: return a.kind
+  promoteIntKindsCG(a.kind, b.kind)
+
+proc coerceInt(c: var CodegenCtx, v: LLVMValueRef,
+               fromKind, toKind: TypeKind): LLVMValueRef =
+  ## <NOTE>#72: extend by source signedness, truncate on shrink,
+  ## pass through on same width (including iN -> uN, same bits).
+  if fromKind == toKind: return v
+  let fw = kindBitWidth(fromKind)
+  let tw = kindBitWidth(toKind)
+  if fw < tw:
+    let toTy = llvmIntType(c, toKind)
+    if kindSigned(fromKind):
+      LLVMBuildSExt(c.builder, v, toTy, "sext")
+    else:
+      LLVMBuildZExt(c.builder, v, toTy, "zext")
+  elif fw > tw:
+    let toTy = llvmIntType(c, toKind)
+    LLVMBuildTrunc(c.builder, v, toTy, "trunc")
+  else:
+    v
+
+proc nodeKindOr(n: Node, default: TypeKind): TypeKind =
+  ## <NOTE>#75: unit tests build nodes by hand without sema; typ may be
+  ## nil. Default to i64 in that case (the only width test fixtures use).
+  if n.typ != nil: n.typ.kind else: default
+
+proc emitOperand(c: var CodegenCtx, n: Node, targetKind: TypeKind): LLVMValueRef
 
 proc kindFromTypeName(name: string): TypeKind =
   ## <NOTE>#68: fallback for unit tests that build nkDecl by hand,
@@ -90,34 +172,48 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   of nkUnary:
     case n.unop
     of uoNeg:
-      LLVMBuildNeg(c.builder, emitExpr(c, n.operand), "neg")
+      # <NOTE>#73: negate at the result width. iLit operands are
+      # emitted as constants at that width; concrete operands coerce.
+      let targetKind = nodeKindOr(n, tyI64)
+      let val = emitOperand(c, n.operand, targetKind)
+      LLVMBuildNeg(c.builder, val, "neg")
   of nkBinOp:
     case n.op
     of boAdd, boSub, boMul, boDiv, boMod:
-      let lhs = emitExpr(c, n.left)
-      let rhs = emitExpr(c, n.right)
+      let targetKind = nodeKindOr(n, tyI64)
+      let lhs = emitOperand(c, n.left, targetKind)
+      let rhs = emitOperand(c, n.right, targetKind)
+      let signed = kindSigned(targetKind)
       case n.op
       of boAdd: LLVMBuildAdd(c.builder, lhs, rhs, "add")
       of boSub: LLVMBuildSub(c.builder, lhs, rhs, "sub")
       of boMul: LLVMBuildMul(c.builder, lhs, rhs, "mul")
-      of boDiv: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
-      of boMod: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
+      of boDiv:
+        if signed: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
+        else: LLVMBuildUDiv(c.builder, lhs, rhs, "div")
+      of boMod:
+        if signed: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
+        else: LLVMBuildURem(c.builder, lhs, rhs, "rem")
       else: raise newException(ValueError, "unreachable")
     of boEq, boNe, boLt, boLe, boGt, boGe:
       # <NOTE>#43: comparisons operate on a common representation.
-      # Int/iLit -> i64; Bool -> i1; mixed Int/iLit vs Bool is rejected
-      # by sema (except Int vs iLit which are both i64 here).
       let lIsBool = n.left.typ != nil and n.left.typ.kind == tyBool
       let rIsBool = n.right.typ != nil and n.right.typ.kind == tyBool
-      var lhs: LLVMValueRef
-      var rhs: LLVMValueRef
       if lIsBool or rIsBool:
-        lhs = if lIsBool: emitExpr(c, n.left) else: toBool(c, emitExpr(c, n.left))
-        rhs = if rIsBool: emitExpr(c, n.right) else: toBool(c, emitExpr(c, n.right))
+        var lhs: LLVMValueRef
+        var rhs: LLVMValueRef
+        if lIsBool: lhs = emitExpr(c, n.left)
+        else: lhs = toBool(c, emitExpr(c, n.left))
+        if rIsBool: rhs = emitExpr(c, n.right)
+        else: rhs = toBool(c, emitExpr(c, n.right))
+        LLVMBuildICmp(c.builder, cmpPredicate(n.op, tyBool), lhs, rhs, "cmp")
       else:
-        lhs = emitExpr(c, n.left)
-        rhs = emitExpr(c, n.right)
-      LLVMBuildICmp(c.builder, cmpPredicate(n.op), lhs, rhs, "cmp")
+        let targetKind =
+          if n.left.typ == nil or n.right.typ == nil: tyI64
+          else: commonKindFor(n.left.typ, n.right.typ)
+        let lhs = emitOperand(c, n.left, targetKind)
+        let rhs = emitOperand(c, n.right, targetKind)
+        LLVMBuildICmp(c.builder, cmpPredicate(n.op, targetKind), lhs, rhs, "cmp")
   of nkCast:
     # <NOTE>#61: same-width passthrough only in 7c. Trunc/zext/sext in 7d.
     let v = emitExpr(c, n.castExpr)
@@ -204,6 +300,18 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   else:
     raise newException(ValueError,
       "codegen: unsupported node: " & $n.kind)
+
+proc emitOperand(c: var CodegenCtx, n: Node,
+                  targetKind: TypeKind): LLVMValueRef =
+  # <NOTE>#74: iLit operands are emitted directly at the target width
+  # (sema already folded the value). Concrete operands emit at their
+  # own width, then coerce.
+  if n.typ != nil and n.typ.kind == tyILit:
+    return LLVMConstInt(llvmIntType(c, targetKind),
+                        cast[culonglong](n.typ.value), 0)
+  let v = emitExpr(c, n)
+  if n.typ == nil: return v  # defensive; sema should have set typ
+  coerceInt(c, v, n.typ.kind, targetKind)
 
 proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   ## Emits one statement. Returns the value expression if n is a value

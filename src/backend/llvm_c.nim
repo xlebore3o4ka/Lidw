@@ -84,6 +84,12 @@ proc LLVMBuildSDiv*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
 proc LLVMBuildSRem*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
                     Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildSRem".}
+proc LLVMBuildUDiv*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildUDiv".}
+proc LLVMBuildURem*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildURem".}
 proc LLVMBuildNeg*(Builder: LLVMBuilderRef, V: LLVMValueRef,
                    Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildNeg".}
@@ -105,6 +111,10 @@ proc LLVMBuildLoad2*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,
 const
   LLVMIntEQ*  = 32.cint
   LLVMIntNE*  = 33.cint
+  LLVMIntUGT* = 34.cint
+  LLVMIntUGE* = 35.cint
+  LLVMIntULT* = 36.cint
+  LLVMIntULE* = 37.cint
   LLVMIntSGT* = 38.cint
   LLVMIntSGE* = 39.cint
   LLVMIntSLT* = 40.cint

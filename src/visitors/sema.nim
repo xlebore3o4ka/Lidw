@@ -84,28 +84,53 @@ proc visitFloat*(v: var SemaVisitor, n: Node) =
 
 proc visitUnary*(v: var SemaVisitor, n: Node) =
   visit(v, n.operand)
-  if v.ctx != nil:
+  if n.operand.typ.kind == tyILit:
+    # <NOTE>#12: literal folds through unary regardless of context;
+    # context only checks the folded value fits.
+    case n.unop
+    of uoNeg:
+      let val = n.operand.typ.value
+      if val == low(int64):
+        raise lidwError(lekSema, "integer overflow: -" & $val, n.line, n.col)
+      let lt = iLitType(-val)
+      if v.ctx != nil and not fits(lt, v.ctx):
+        raise lidwError(lekSema,
+          "literal " & $lt & " does not fit " & $v.ctx, n.line, n.col)
+      n.typ = lt
+  else:
+    if v.ctx == nil:
+      raise lidwError(lekSema,
+        "cannot type unary " & unopStr(n.unop) & " on " & $n.operand.typ &
+        " without context", n.line, n.col)
     if not fits(n.operand.typ, v.ctx):
       raise lidwError(lekSema,
         "operand of unary " & unopStr(n.unop) & " has type " & $n.operand.typ &
         ", expected " & $v.ctx, n.line, n.col)
     n.typ = v.ctx
-  else:
-    case n.unop
-    of uoNeg:
-      if n.operand.typ.kind == tyILit:
-        let val = n.operand.typ.value
-        if val == low(int64):
-          raise lidwError(lekSema, "integer overflow: -" & $val, n.line, n.col)
-        n.typ = iLitType(-val)
-      else:
-        n.typ = n.operand.typ
 
 proc visitBinOp*(v: var SemaVisitor, n: Node) =
   visit(v, n.left)
   visit(v, n.right)
 
-  if v.ctx != nil:
+  let bothLit = n.left.typ.kind == tyILit and n.right.typ.kind == tyILit
+
+  if bothLit:
+    # <NOTE>#12: literals fold through binary op regardless of context.
+    # Context only checks the folded value fits; it never coerces the
+    # result to a concrete type.
+    let res = foldInt(n.op, n.left.typ.value, n.right.typ.value, n.line, n.col)
+    let lt = iLitType(res)
+    if v.ctx != nil and not fits(lt, v.ctx):
+      raise lidwError(lekSema,
+        "literal " & $lt & " does not fit " & $v.ctx, n.line, n.col)
+    n.typ = lt
+  else:
+    # <TODO>#10: at least one operand is non-literal; result takes the
+    # expected type. Unreachable until variables exist.
+    if v.ctx == nil:
+      raise lidwError(lekSema,
+        "cannot type " & opStr(n.op) & " without context: " &
+        $n.left.typ & " vs " & $n.right.typ, n.line, n.col)
     if not fits(n.left.typ, v.ctx):
       raise lidwError(lekSema,
         "left operand of " & opStr(n.op) & " has type " & $n.left.typ &
@@ -115,16 +140,6 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
         "right operand of " & opStr(n.op) & " has type " & $n.right.typ &
         ", expected " & $v.ctx, n.line, n.col)
     n.typ = v.ctx
-  else:
-    if n.left.typ.kind == tyILit and n.right.typ.kind == tyILit:
-      let res = foldInt(n.op, n.left.typ.value, n.right.typ.value, n.line, n.col)
-      n.typ = iLitType(res)
-    else:
-      # <TODO>#10: mixed types without context — unreachable today, but
-      # will be reachable once variables exist; then decide promote/error.
-      raise lidwError(lekSema,
-        "cannot type " & opStr(n.op) & " without context: " &
-        $n.left.typ & " vs " & $n.right.typ, n.line, n.col)
 
 proc runSema*(n: Node, ctx: LidwType = nil): Node =
   ## Run sema on n with the given context; types set in-place, n returned.

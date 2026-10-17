@@ -125,6 +125,33 @@ suite "llvm-c bindings":
     check "alloca i1" in ir
     check "store i1 true" in ir
 
+  test "emitModule cast Int to Int is passthrough":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5))),
+      Node(kind: nkDecl, declName: "y", declType: "Int",
+           declInit: Node(kind: nkCast, typ: i64Type(), castTarget: "Int",
+             castExpr: Node(kind: nkIdent, identName: "x", typ: i64Type())))
+    ])
+    let ir = emitModule(p)
+    check "load i64" in ir
+
+  test "emitModule width-changing cast rejected":
+    # Bool decl: i1 alloca is supported; the cast i64 -> i1 hits
+    # the width-changing-cast path in 7c.
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5))),
+      Node(kind: nkDecl, declName: "b", declType: "Bool",
+           declInit: Node(kind: nkCast, typ: boolType(), castTarget: "Bool",
+             castExpr: Node(kind: nkIdent, identName: "x", typ: i64Type())))
+    ])
+    try:
+      discard emitModule(p)
+      check false
+    except ValueError as e:
+      check "width-changing cast" in e.msg
+
   test "emitModule narrow decl rejected in codegen":
     let p = Node(kind: nkProgram, stmts: @[
       Node(kind: nkDecl, declName: "x", declType: "U8",

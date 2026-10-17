@@ -28,6 +28,7 @@ type
     tkElif       ## elif
     tkElse       ## else
     tkIs         ## is
+    tkAs         ## as (cast)
     tkEOF        ## end of input
 
   Token* = object
@@ -66,4 +67,5 @@ proc `$`*(t: Token): string =
     of tkElif:    "tkElif"
     of tkElse:    "tkElse"
     of tkIs:      "tkIs"
+    of tkAs:      "tkAs"
     of tkEOF:     "tkEOF"

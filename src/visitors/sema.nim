@@ -31,6 +31,7 @@ proc visitIdent*(v: var SemaVisitor, n: Node)
 proc visitAssign*(v: var SemaVisitor, n: Node)
 proc visitIf*(v: var SemaVisitor, n: Node)
 proc visitIs*(v: var SemaVisitor, n: Node)
+proc visitCast*(v: var SemaVisitor, n: Node)
 
 # <NOTE>#54: iLit range per concrete int type. U64 upper is above int64
 # max; iLit carries int64, so any non-negative value fits U64.
@@ -404,6 +405,23 @@ proc visitIs*(v: var SemaVisitor, n: Node) =
   raise lidwError(lekSema,
     "is outside block (use `(is ...)` or a multi-stmt branch)",
     n.line, n.col)
+
+proc visitCast*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#63: cast is explicit; no fits-check on the source.
+  # Source must be a value: Int, Bool, or iLit. Nul cannot be cast.
+  let saveCtx = v.ctx
+  v.ctx = nil
+  visit(v, n.castExpr)
+  v.ctx = saveCtx
+  let srcKind = n.castExpr.typ.kind
+  if srcKind notin IntKinds and srcKind notin {tyILit, tyBool}:
+    raise lidwError(lekSema,
+      "cannot cast " & $n.castExpr.typ, n.castExpr.line, n.castExpr.col)
+  let target = resolveTypeName(n.castTarget, n.line, n.col)
+  n.typ = target
+  if v.ctx != nil and not fits(n.typ, v.ctx):
+    raise lidwError(lekSema,
+      "cast to " & $n.typ & " does not fit " & $v.ctx, n.line, n.col)
 
 proc runSema*(n: Node): Node =
   ## Run sema on n; types set in-place, n returned.

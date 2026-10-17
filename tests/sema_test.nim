@@ -414,3 +414,37 @@ suite "sema":
 
   test "arithmetic on Bool still rejected":
     check expectSema("Bool b = 1 Bool c = b + 1") == lekSema
+
+  test "cast Int to Int":
+    let n = sema("Int x = 5 Int y = x as Int")
+    check n.stmts[1].declInit.kind == nkCast
+    check n.stmts[1].declInit.typ.kind == tyI64
+
+  test "cast iLit to Int":
+    let n = sema("Int x = 5 as Int")
+    check n.stmts[0].declInit.kind == nkCast
+    check n.stmts[0].declInit.typ.kind == tyI64
+    check n.stmts[0].declInit.castExpr.typ.kind == tyILit
+
+  test "cast Bool to Bool":
+    let n = sema("Bool b = 1 Bool c = b as Bool")
+    check n.stmts[1].declInit.typ.kind == tyBool
+
+  test "cast Int to U8":
+    let n = sema("Int x = 5 U8 y = x as U8")
+    check n.stmts[1].declInit.kind == nkCast
+    check n.stmts[1].declInit.typ.kind == tyU8
+
+  test "cast to Bool then use in if":
+    let n = sema("Int x = 5 if x as Bool 1 else 0")
+    check n.stmts[1].kind == nkIf
+
+  test "cannot cast Nul":
+    check expectSema("Int x = (1; 2) as Int") == lekSema
+
+  test "cast to unknown type":
+    check expectSema("Int x = 5 as Foo") == lekSema
+
+  test "cast result checked against decl ctx":
+    # U8 does not fit Int, even via cast
+    check expectSema("Int x = 5 as U8") == lekSema

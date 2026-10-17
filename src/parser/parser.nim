@@ -97,8 +97,23 @@ proc parseUnary(p: var Parser): Node =
   else:
     result = parsePrimary(p)
 
-proc parseExpr(p: var Parser, minPrec: int): Node =
+# <NOTE>#62: `as` binds tighter than binary ops, looser than unary,
+# like in Rust: `-x as U8` = `(-x) as U8`, `2 * 5 as U8` = `2 * (5 as U8)`.
+proc parseAsPostfix(p: var Parser): Node =
   result = parseUnary(p)
+  while p.peek().kind == tkAs:
+    let asTok = p.peek()
+    p.advance()
+    let tyTok = p.peek()
+    if tyTok.kind != tkType:
+      raise lidwError(lekParse,
+        "expected type after 'as', got " & $tyTok, tyTok.line, tyTok.col)
+    p.advance()
+    result = Node(kind: nkCast, castTarget: tyTok.word, castExpr: result,
+                  line: asTok.line, col: asTok.col)
+
+proc parseExpr(p: var Parser, minPrec: int): Node =
+  result = parseAsPostfix(p)
   while true:
     let t = p.peek()
     let prec = precedence(t.kind)

@@ -189,6 +189,10 @@ suite "lexer":
     check ts[3].kind == tkIdent
     check ts[4].kind == tkEOF
 
+  test "as is a keyword":
+    check lexAll("as")[0].kind == tkAs
+    check lexAll("As")[0].kind == tkType
+
   test "adjacent dash-slash is comment, spaced is minus slash":
     let ts = lexAll("a - / b")
     check ts[0].kind == tkIdent

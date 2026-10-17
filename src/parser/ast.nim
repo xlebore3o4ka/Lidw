@@ -19,7 +19,7 @@ type
   NodeKind* = enum
     nkInt, nkFloat, nkUnary, nkBinOp
     nkBlock, nkProgram, nkDecl, nkIdent, nkAssign
-    nkIf, nkIs
+    nkIf, nkIs, nkCast
 
   Node* = ref object
     line*: int
@@ -55,6 +55,9 @@ type
       ifElse*: Node       ## nil if no else branch
     of nkIs:
       isValue*: Node
+    of nkCast:
+      castTarget*: string
+      castExpr*: Node
 
 proc opStr*(o: BinOp): string =
   case o
@@ -125,5 +128,8 @@ proc render(n: Node, depth: int): string =
   of nkIs:
     pad & "is @" & $n.line & ":" & $n.col & ts & "\n" &
       render(n.isValue, depth + 1)
+  of nkCast:
+    pad & "cast(" & n.castTarget & ") @" & $n.line & ":" & $n.col & ts & "\n" &
+      render(n.castExpr, depth + 1)
 
 proc `$`*(n: Node): string = render(n, 0)

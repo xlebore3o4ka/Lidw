@@ -167,6 +167,43 @@ suite "parser":
     check n.stmts[0].ifThen.kind == nkBlock
     check n.stmts[0].ifThen.stmts.len == 2
 
+  test "cast parses":
+    let n = p("x as Int")
+    check n.stmts[0].kind == nkCast
+    check n.stmts[0].castTarget == "Int"
+    check n.stmts[0].castExpr.kind == nkIdent
+
+  test "cast binds tighter than +":
+    let n = p("1 + 2 as Int")
+    check n.stmts[0].kind == nkBinOp
+    check n.stmts[0].op == boAdd
+    check n.stmts[0].right.kind == nkCast
+
+  test "cast binds looser than unary minus":
+    let n = p("-1 as Int")
+    check n.stmts[0].kind == nkCast
+    check n.stmts[0].castExpr.kind == nkUnary
+
+  test "cast binds tighter than *":
+    let n = p("2 * 5 as Int")
+    check n.stmts[0].kind == nkBinOp
+    check n.stmts[0].op == boMul
+    check n.stmts[0].right.kind == nkCast
+
+  test "chained casts":
+    let n = p("x as Int as Bool")
+    check n.stmts[0].kind == nkCast
+    check n.stmts[0].castTarget == "Bool"
+    check n.stmts[0].castExpr.kind == nkCast
+    check n.stmts[0].castExpr.castTarget == "Int"
+
+  test "cast after only type is parse error":
+    check expectParse("Int as Int") == lekParse
+
+  test "cast without type is parse error":
+    check expectParse("x as") == lekParse
+    check expectParse("x as 5") == lekParse
+
   test "if branch without body is parse error":
     check expectParse("if 1") == lekParse
     check expectParse("if 1 1 else") == lekParse

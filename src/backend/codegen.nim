@@ -88,6 +88,15 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
         lhs = emitExpr(c, n.left)
         rhs = emitExpr(c, n.right)
       LLVMBuildICmp(c.builder, cmpPredicate(n.op), lhs, rhs, "cmp")
+  of nkCast:
+    # <NOTE>#61: same-width passthrough only in 7c. Trunc/zext/sext in 7d.
+    let v = emitExpr(c, n.castExpr)
+    if n.castExpr.typ.kind == n.typ.kind:
+      return v
+    if n.castExpr.typ.kind == tyILit and n.typ.kind == tyI64:
+      return v
+    raise newException(ValueError,
+      "codegen: width-changing cast not supported yet (7d)")
   of nkIdent:
     let slot = c.lookupVar(n.identName)
     if slot == nil:

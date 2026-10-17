@@ -64,7 +64,7 @@ suite "llvm-c bindings":
 
   test "emitModule decl alloca/store":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkInt, intVal: 10))
     ])
     let ir = emitModule(p)
@@ -74,7 +74,7 @@ suite "llvm-c bindings":
 
   test "emitModule decl then read":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkInt, intVal: 10)),
       Node(kind: nkIdent, identName: "x")
     ])
@@ -85,14 +85,14 @@ suite "llvm-c bindings":
 
   test "emitModule decl no init defaults to 0":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int", declInit: nil)
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int", declInit: nil)
     ])
     let ir = emitModule(p)
     check "store i64 0" in ir
 
   test "emitModule decl then add non-constant":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkInt, intVal: 10)),
       Node(kind: nkBinOp, op: boAdd,
         left: Node(kind: nkIdent, identName: "x"),
@@ -104,7 +104,7 @@ suite "llvm-c bindings":
 
   test "emitModule assign stores to same slot":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkInt, intVal: 10)),
       Node(kind: nkAssign, assignName: "x",
            assignValue: Node(kind: nkInt, intVal: 5)),
@@ -118,7 +118,7 @@ suite "llvm-c bindings":
   test "emitModule Bool decl allocates i1 and converts init":
     # LLVM constant-folds icmp on constants; store i1 true is the result.
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "b", declType: "Bool",
+      Node(kind: nkDecl, declName: "b", typ: boolType(), declType: "Bool",
            declInit: Node(kind: nkInt, intVal: 1))
     ])
     let ir = emitModule(p)
@@ -127,9 +127,9 @@ suite "llvm-c bindings":
 
   test "emitModule cast Int to Int is passthrough":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5))),
-      Node(kind: nkDecl, declName: "y", declType: "Int",
+      Node(kind: nkDecl, declName: "y", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkCast, typ: i64Type(), castTarget: "Int",
              castExpr: Node(kind: nkIdent, identName: "x", typ: i64Type())))
     ])
@@ -138,9 +138,9 @@ suite "llvm-c bindings":
 
   test "emitModule cast Int to Bool":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5))),
-      Node(kind: nkDecl, declName: "b", declType: "Bool",
+      Node(kind: nkDecl, declName: "b", typ: boolType(), declType: "Bool",
            declInit: Node(kind: nkCast, typ: boolType(), castTarget: "Bool",
              castExpr: Node(kind: nkIdent, identName: "x", typ: i64Type())))
     ])
@@ -149,7 +149,7 @@ suite "llvm-c bindings":
 
   test "emitModule cast iLit to U8 emits at width":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "u", declType: "U8",
+      Node(kind: nkDecl, declName: "u", typ: u8Type(), declType: "U8",
            declInit: Node(kind: nkCast, typ: u8Type(), castTarget: "U8",
              castExpr: Node(kind: nkInt, intVal: 300, typ: iLitType(300))))
     ])
@@ -158,9 +158,9 @@ suite "llvm-c bindings":
 
   test "emitModule cast Bool to Int":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "b", declType: "Bool",
+      Node(kind: nkDecl, declName: "b", typ: boolType(), declType: "Bool",
            declInit: Node(kind: nkInt, intVal: 1, typ: iLitType(1))),
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkCast, typ: i64Type(), castTarget: "Int",
              castExpr: Node(kind: nkIdent, identName: "b", typ: boolType())))
     ])
@@ -169,7 +169,7 @@ suite "llvm-c bindings":
 
   test "emitModule narrow decl allocates i8":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "U8",
+      Node(kind: nkDecl, declName: "x", typ: u8Type(), declType: "U8",
            declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))
     ])
     let ir = emitModule(p)
@@ -178,14 +178,14 @@ suite "llvm-c bindings":
 
   test "emitModule Bool decl no init stores i1 false":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "b", declType: "Bool", declInit: nil)
+      Node(kind: nkDecl, declName: "b", typ: boolType(), declType: "Bool", declInit: nil)
     ])
     let ir = emitModule(p)
     check "store i1 false" in ir
 
   test "emitModule if statement has basic blocks":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkInt, intVal: 0)),
       Node(kind: nkIf,
         ifCond: Node(kind: nkInt, intVal: 1),
@@ -205,7 +205,7 @@ suite "llvm-c bindings":
 
   test "emitModule if without else jumps to merge":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkInt, intVal: 0)),
       Node(kind: nkIf,
         ifCond: Node(kind: nkInt, intVal: 1),
@@ -221,9 +221,9 @@ suite "llvm-c bindings":
 
   test "emitModule block shadowing creates separate alloca":
     # Int x = 1 (Int x = 2 x) x  ->  two allocas named x, both stored
-    let outerDecl = Node(kind: nkDecl, declName: "x", declType: "Int",
+    let outerDecl = Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
                          declInit: Node(kind: nkInt, intVal: 1))
-    let innerDecl = Node(kind: nkDecl, declName: "x", declType: "Int",
+    let innerDecl = Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
                          declInit: Node(kind: nkInt, intVal: 2))
     let innerRead = Node(kind: nkIdent, identName: "x")
     let innerBlock = Node(kind: nkBlock, stmts: @[innerDecl, innerRead])
@@ -237,7 +237,7 @@ suite "llvm-c bindings":
 
   test "emitModule is in block yields value":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkBlock, typ: i64Type(), stmts: @[
              Node(kind: nkIs, typ: iLitType(5),
                   isValue: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))
@@ -248,9 +248,9 @@ suite "llvm-c bindings":
 
   test "emitModule is with prior stmts in block":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkBlock, typ: i64Type(), stmts: @[
-             Node(kind: nkDecl, declName: "y", declType: "Int",
+             Node(kind: nkDecl, declName: "y", typ: i64Type(), declType: "Int",
                   declInit: Node(kind: nkInt, intVal: 10, typ: iLitType(10))),
              Node(kind: nkIs, typ: i64Type(),
                   isValue: Node(kind: nkIdent, identName: "y", typ: i64Type()))
@@ -262,9 +262,9 @@ suite "llvm-c bindings":
 
   test "emitModule if branches with is yield via phi":
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "c", declType: "Bool",
+      Node(kind: nkDecl, declName: "c", typ: boolType(), declType: "Bool",
            declInit: Node(kind: nkInt, intVal: 1, typ: iLitType(1))),
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkIf, typ: i64Type(),
              ifCond: Node(kind: nkIdent, identName: "c", typ: boolType()),
              ifThen: Node(kind: nkBlock, typ: i64Type(), stmts: @[
@@ -282,9 +282,9 @@ suite "llvm-c bindings":
   test "emitModule value-if produces phi":
     # non-constant cond so LLVM cannot fold the branches away.
     let p = Node(kind: nkProgram, stmts: @[
-      Node(kind: nkDecl, declName: "c", declType: "Bool",
+      Node(kind: nkDecl, declName: "c", typ: boolType(), declType: "Bool",
            declInit: Node(kind: nkInt, intVal: 1)),
-      Node(kind: nkDecl, declName: "x", declType: "Int",
+      Node(kind: nkDecl, declName: "x", typ: i64Type(), declType: "Int",
            declInit: Node(kind: nkIf, typ: i64Type(),
              ifCond: Node(kind: nkIdent, identName: "c", typ: boolType()),
              ifThen: Node(kind: nkInt, intVal: 10, typ: iLitType(10)),

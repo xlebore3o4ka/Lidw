@@ -127,23 +127,6 @@ proc nodeKindOr(n: Node, default: TypeKind): TypeKind =
 
 proc emitOperand(c: var CodegenCtx, n: Node, targetKind: TypeKind): LLVMValueRef
 
-proc kindFromTypeName(name: string): TypeKind =
-  ## <NOTE>#68: fallback for unit tests that build nkDecl by hand,
-  ## bypassing sema. In normal flow n.typ is always set.
-  case name
-  of "Int", "I64": tyI64
-  of "I8": tyI8
-  of "U8": tyU8
-  of "I16": tyI16
-  of "U16": tyU16
-  of "I32": tyI32
-  of "U32": tyU32
-  of "U64": tyU64
-  of "Bool": tyBool
-  else:
-    raise newException(ValueError,
-      "codegen: unknown declared type: " & name)
-
 proc llvmIntType(c: CodegenCtx, kind: TypeKind): LLVMTypeRef =
   ## <NOTE>#64: LLVM has one iN per width; signedness matters only in
   ## operations (sdiv/udiv, icmp slt/ult), not in the type itself.
@@ -338,11 +321,12 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   ## expr (for main's return), nil for declarative statements.
   case n.kind
   of nkDecl:
-    # <TODO>#41: alloca in current block; for non-linear control flow
-    # these must go to the entry block.
-    let declKind =
-      if n.typ != nil: n.typ.kind
-      else: kindFromTypeName(n.declType)
+    # <NOTE>#82: fn decls are registered by sema but not emitted by
+    # codegen in Fa. Fd will emit `define iN @f(...)`. Return nil here.
+    if n.typ != nil and n.typ.kind == tyFn:
+      return nil
+    doAssert n.typ != nil, "codegen: decl without sema type"
+    let declKind = n.typ.kind
     let llvmTy = llvmIntType(c, declKind)
     let slot = LLVMBuildAlloca(c.builder, llvmTy, n.declName.cstring)
     c.defineVar(n.declName, slot, llvmTy)
@@ -361,7 +345,7 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       initVal = emitExpr(c, n.declInit)
       # <TODO>#66: coerce concrete source to slot width (7d-2). Check
       # only when both types are known; unit tests may leave typ nil.
-      if n.declInit.typ != nil and n.typ != nil and
+      if n.declInit.typ != nil and
          n.declInit.typ.kind != n.typ.kind:
         raise newException(ValueError,
           "codegen: mismatched init type not supported yet (7d-2): " &
@@ -383,10 +367,8 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
         cast[culonglong](n.assignValue.typ.value), 0)
     else:
       val = emitExpr(c, n.assignValue)
-      # <TODO>#66: coerce concrete source to slot width (7d-2). Check
-      # only when both types are known.
-      if n.assignValue.typ != nil and n.typ != nil and
-         n.assignValue.typ.kind != n.typ.kind:
+      # <TODO>#66: coerce concrete source to slot width (7d-2).
+      if n.assignValue.typ.kind != n.typ.kind:
         raise newException(ValueError,
           "codegen: mismatched assign type not supported yet (7d-2): " &
           $n.assignValue.typ.kind & " -> " & $n.typ.kind)

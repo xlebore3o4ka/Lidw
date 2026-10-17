@@ -5,14 +5,17 @@
 import ../parser/ast
 import ../types
 import ../errors
+import ../scope
+import ../type_resolve
 import ./base
 
 type
   SemaVisitor* = object
     ctx*: LidwType   ## nil = no expectation
+    symbols*: Symbols
 
 proc newSemaVisitor*(ctx: LidwType = nil): SemaVisitor =
-  SemaVisitor(ctx: ctx)
+  SemaVisitor(ctx: ctx, symbols: newSymbols())
 
 # Forward declarations: base.visit dispatches to all four handlers;
 # without these, compiling visitUnary's body triggers visit instantiation
@@ -102,15 +105,12 @@ proc visitUnary*(v: var SemaVisitor, n: Node) =
           "literal " & $lt & " does not fit " & $v.ctx, n.line, n.col)
       n.typ = lt
   else:
-    if v.ctx == nil:
-      raise lidwError(lekSema,
-        "cannot type unary " & unopStr(n.unop) & " on " & $n.operand.typ &
-        " without context", n.line, n.col)
-    if not fits(n.operand.typ, v.ctx):
+    # <NOTE>#21: concrete operand; unary keeps its type, ctx is a check.
+    if v.ctx != nil and not fits(n.operand.typ, v.ctx):
       raise lidwError(lekSema,
         "operand of unary " & unopStr(n.unop) & " has type " & $n.operand.typ &
         ", expected " & $v.ctx, n.line, n.col)
-    n.typ = v.ctx
+    n.typ = n.operand.typ
 
 proc visitBinOp*(v: var SemaVisitor, n: Node) =
   visit(v, n.left)
@@ -129,39 +129,69 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
         "literal " & $lt & " does not fit " & $v.ctx, n.line, n.col)
     n.typ = lt
   else:
-    # <TODO>#10: at least one operand is non-literal; result takes the
-    # expected type. Unreachable until variables exist.
-    if v.ctx == nil:
+    # <NOTE>#20: at least one operand is concrete; unify operands.
+    # i64 beats iLit; anything else is a type mismatch.
+    let unified =
+      if n.left.typ.kind == tyI64 or n.right.typ.kind == tyI64: i64Type()
+      else: nil
+    if unified == nil:
       raise lidwError(lekSema,
-        "cannot type " & opStr(n.op) & " without context: " &
-        $n.left.typ & " vs " & $n.right.typ, n.line, n.col)
-    if not fits(n.left.typ, v.ctx):
+        "cannot unify " & $n.left.typ & " and " & $n.right.typ &
+        " for " & opStr(n.op), n.line, n.col)
+    if v.ctx != nil and not fits(unified, v.ctx):
       raise lidwError(lekSema,
-        "left operand of " & opStr(n.op) & " has type " & $n.left.typ &
-        ", expected " & $v.ctx, n.line, n.col)
-    if not fits(n.right.typ, v.ctx):
-      raise lidwError(lekSema,
-        "right operand of " & opStr(n.op) & " has type " & $n.right.typ &
-        ", expected " & $v.ctx, n.line, n.col)
-    n.typ = v.ctx
+        "expression type " & $unified & " does not fit " & $v.ctx,
+        n.line, n.col)
+    n.typ = unified
 
 proc visitBlock*(v: var SemaVisitor, n: Node) =
+  discard v.symbols.open()
   for s in n.stmts:
     visit(v, s)
+  v.symbols.close()
+  # <NOTE>#19: multi-stmt block in value position yields default of ctx.
+  # Single-stmt blocks are unwrapped by the parser and never reach here.
+  if n.stmts.len > 1 and v.ctx != nil:
+    n.typ = v.ctx
 
 proc visitDecl*(v: var SemaVisitor, n: Node) =
-  # <TODO>#14: resolve declType, bind name, ctx for init — step 3
+  let declT = resolveTypeName(n.declType, n.line, n.col)
+  let saveCtx = v.ctx
+  v.ctx = declT
   if n.declInit != nil:
     visit(v, n.declInit)
+    if n.declInit.typ == nil or not fits(n.declInit.typ, declT):
+      let got = if n.declInit.typ == nil: "<untyped>" else: $n.declInit.typ
+      raise lidwError(lekSema,
+        "initializer of " & n.declName & " has type " & got &
+        ", expected " & $declT, n.line, n.col)
+  v.ctx = saveCtx
+  v.symbols.define(n.declName, declT, n.declMut, n.line, n.col)
+  n.typ = declT
 
 proc visitIdent*(v: var SemaVisitor, n: Node) =
-  # <TODO>#15: env lookup — step 3
-  raise lidwError(lekSema, "undefined variable: " & n.identName, n.line, n.col)
+  let sym = v.symbols.lookup(n.identName)
+  if sym.typ == nil:
+    raise lidwError(lekSema, "undefined variable: " & n.identName, n.line, n.col)
+  n.typ = sym.typ
 
 proc visitAssign*(v: var SemaVisitor, n: Node) =
-  # <TODO>#16: env lookup + type check — step 3
+  let sym = v.symbols.lookup(n.assignName)
+  if sym.typ == nil:
+    raise lidwError(lekSema, "undefined variable: " & n.assignName, n.line, n.col)
+  if sym.mut == muImmutable:
+    raise lidwError(lekSema,
+      "cannot assign to immutable variable " & n.assignName, n.line, n.col)
+  let saveCtx = v.ctx
+  v.ctx = sym.typ
   visit(v, n.assignValue)
-  raise lidwError(lekSema, "undefined variable: " & n.assignName, n.line, n.col)
+  if n.assignValue.typ == nil or not fits(n.assignValue.typ, sym.typ):
+    let got = if n.assignValue.typ == nil: "<untyped>" else: $n.assignValue.typ
+    raise lidwError(lekSema,
+      "cannot assign " & got & " to " & $sym.typ & " variable " & n.assignName,
+      n.line, n.col)
+  v.ctx = saveCtx
+  n.typ = sym.typ
 
 proc runSema*(n: Node, ctx: LidwType = nil): Node =
   ## Run sema on n with the given context; types set in-place, n returned.

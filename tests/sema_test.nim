@@ -1,6 +1,7 @@
 # Semantic analyzer unit tests.
 
 import std/unittest
+import std/strutils
 import ../src/parser/lexer
 import ../src/parser/ast
 import ../src/parser/parser
@@ -103,3 +104,59 @@ suite "sema":
     check d.typ.kind == tyI64
     check d.declInit.kind == nkBlock
     check d.declInit.typ.kind == tyI64
+
+  test "redefinition in same scope":
+    try:
+      discard sema("Int x = 10 Int x = 20")
+      check false
+    except LidwError as e:
+      check e.kind == lekSema
+      check "redeclaration of x" in e.msg
+      check "previously declared at 1:7" in e.msg
+      check e.line == 1 and e.col == 18
+
+  test "shadowing in nested scope is ok":
+    let n = sema("Int x = 10 (Int x = 20 x)")
+    check n.stmts.len == 2
+    check n.stmts[0].kind == nkDecl and n.stmts[0].declName == "x"
+    check n.stmts[1].kind == nkBlock
+    check n.stmts[1].stmts.len == 2
+    check n.stmts[1].stmts[0].kind == nkDecl and n.stmts[1].stmts[0].declName == "x"
+    check n.stmts[1].stmts[1].kind == nkIdent
+
+  test "outer x visible after inner block closes":
+    let n = sema("Int x = 10 (Int x = 20 x) x + 1")
+    check n.stmts.len == 3
+    check n.stmts[1].kind == nkBlock
+    check n.stmts[2].kind == nkBinOp
+    check n.stmts[2].typ.kind == tyI64
+    check n.stmts[2].left.kind == nkIdent and n.stmts[2].left.typ.kind == tyI64
+
+  test "assign to immutable variable":
+    try:
+      discard sema("Int x! = 10 x = 5")
+      check false
+    except LidwError as e:
+      check e.kind == lekSema
+      check "cannot assign to immutable variable x" in e.msg
+
+  test "assign to explicit-mutable via dollar":
+    let n = sema("Int x$ = 10 x = 5")
+    check n.stmts.len == 2
+    check n.stmts[1].kind == nkAssign
+
+  test "immutable declared without init, then read":
+    let n = sema("Int x! Int y = x")
+    check n.stmts.len == 2
+    check n.stmts[0].declMut == muImmutable
+    check n.stmts[1].typ.kind == tyI64
+    check n.stmts[1].declInit.kind == nkIdent
+    check n.stmts[1].declInit.typ.kind == tyI64
+
+  test "immutable with different decl and use positions redeclare fails":
+    try:
+      discard sema("Int x! = 1 Int x = 2")
+      check false
+    except LidwError as e:
+      check e.kind == lekSema
+      check "redeclaration of x" in e.msg

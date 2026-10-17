@@ -28,6 +28,8 @@ proc visitBlock*(v: var SemaVisitor, n: Node)
 proc visitDecl*(v: var SemaVisitor, n: Node)
 proc visitIdent*(v: var SemaVisitor, n: Node)
 proc visitAssign*(v: var SemaVisitor, n: Node)
+proc visitIf*(v: var SemaVisitor, n: Node)
+proc visitIs*(v: var SemaVisitor, n: Node)
 
 proc fits*(t, ctx: LidwType): bool =
   ## Does type t satisfy expected context ctx?
@@ -248,6 +250,14 @@ proc visitAssign*(v: var SemaVisitor, n: Node) =
       n.line, n.col)
   v.ctx = saveCtx
   n.typ = sym.typ
+
+proc visitIf*(v: var SemaVisitor, n: Node) =
+  # <TODO>#30: C2e — cond fits Bool, branches yield, else default
+  raise lidwError(lekSema, "if: not implemented yet", n.line, n.col)
+
+proc visitIs*(v: var SemaVisitor, n: Node) =
+  # <TODO>#31: C2e — yield from nearest block
+  raise lidwError(lekSema, "is: not implemented yet", n.line, n.col)
 
 proc runSema*(n: Node, ctx: LidwType = nil): Node =
   ## Run sema on n with the given context; types set in-place, n returned.

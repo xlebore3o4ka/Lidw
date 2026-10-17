@@ -39,6 +39,7 @@ proc binOpFrom(kind: TokenKind): BinOp =
 
 proc parseExpr(p: var Parser, minPrec: int): Node
 proc parseStmt(p: var Parser): Node
+proc parseIfLike(p: var Parser, tok: Token): Node
 
 proc parsePrimary(p: var Parser): Node =
   let t = p.peek()
@@ -56,6 +57,13 @@ proc parsePrimary(p: var Parser): Node =
   of tkType:
     raise lidwError(lekParse, "expected expression, got type " & t.word,
                     t.line, t.col)
+  of tkIf:
+    p.advance()
+    result = parseIfLike(p, t)
+  of tkIs:
+    p.advance()
+    let val = parseExpr(p, 0)
+    result = Node(kind: nkIs, isValue: val, line: t.line, col: t.col)
   of tkLParen:
     let lparen = t
     p.advance()
@@ -71,7 +79,8 @@ proc parsePrimary(p: var Parser): Node =
     p.advance()
     if stmts.len == 0:
       raise lidwError(lekParse, "empty parentheses", lparen.line, lparen.col)
-    if stmts.len == 1:
+    # <NOTE>#29: '(is ...)' must stay a block — 'is' needs a block context.
+    if stmts.len == 1 and stmts[0].kind != nkIs:
       result = stmts[0]
     else:
       result = Node(kind: nkBlock, stmts: stmts, line: lparen.line, col: lparen.col)
@@ -143,10 +152,48 @@ proc parseAssign(p: var Parser): Node =
   result = Node(kind: nkAssign, assignName: nameTok.word, assignValue: val,
                 line: eqTok.line, col: eqTok.col)
 
+proc parseBody(p: var Parser): seq[Node] =
+  ## Parses stmts until elif/else/EOF/rparen; ';' skipped.
+  result = @[]
+  while true:
+    while p.peek().kind == tkSemicolon: p.advance()
+    if p.peek().kind in {tkElif, tkElse, tkEOF, tkRParen}: break
+    result.add parseStmt(p)
+
+proc bodyOrSingle(p: var Parser, stmts: seq[Node], what: string,
+                  line, col: int): Node =
+  if stmts.len == 0:
+    raise lidwError(lekParse, what & " requires a body", line, col)
+  if stmts.len == 1:
+    stmts[0]
+  else:
+    Node(kind: nkBlock, stmts: stmts, line: line, col: col)
+
+proc parseIfLike(p: var Parser, tok: Token): Node =
+  ## Called after tkIf/tkElif was consumed. tok is that token.
+  let cond = parseExpr(p, 0)
+  let thenStmts = parseBody(p)
+  let thenBr = bodyOrSingle(p, thenStmts, "if", tok.line, tok.col)
+  var elseBr: Node = nil
+  if p.peek().kind == tkElif:
+    let elifTok = p.peek()
+    p.advance()
+    elseBr = parseIfLike(p, elifTok)
+  elif p.peek().kind == tkElse:
+    let elseTok = p.peek()
+    p.advance()
+    let elseStmts = parseBody(p)
+    elseBr = bodyOrSingle(p, elseStmts, "else", elseTok.line, elseTok.col)
+  Node(kind: nkIf, ifCond: cond, ifThen: thenBr, ifElse: elseBr,
+       line: tok.line, col: tok.col)
+
 proc parseStmt(p: var Parser): Node =
   let t = p.peek()
   if t.kind == tkType:
     parseDecl(p)
+  elif t.kind == tkIf:
+    p.advance()
+    parseIfLike(p, t)
   elif t.kind == tkIdent and p.tokens[p.pos + 1].kind == tkEquals:
     parseAssign(p)
   else:

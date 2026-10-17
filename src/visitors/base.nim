@@ -17,6 +17,8 @@ proc visit*[V](v: var V, n: Node) =
   of nkDecl:   v.visitDecl(n)
   of nkIdent:  v.visitIdent(n)
   of nkAssign: v.visitAssign(n)
+  of nkIf:     v.visitIf(n)
+  of nkIs:     v.visitIs(n)
 
 when isMainModule:
   # smoke: prove dispatch type-checks; no real visitor yet.
@@ -29,6 +31,8 @@ when isMainModule:
   proc visitDecl*(v: var Noop, n: Node) = discard
   proc visitIdent*(v: var Noop, n: Node) = discard
   proc visitAssign*(v: var Noop, n: Node) = discard
+  proc visitIf*(v: var Noop, n: Node) = discard
+  proc visitIs*(v: var Noop, n: Node) = discard
   var v: Noop
   let n = Node(kind: nkInt, intVal: 1)
   visit(v, n)

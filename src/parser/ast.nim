@@ -19,6 +19,7 @@ type
   NodeKind* = enum
     nkInt, nkFloat, nkUnary, nkBinOp
     nkBlock, nkDecl, nkIdent, nkAssign
+    nkIf, nkIs
 
   Node* = ref object
     line*: int
@@ -48,6 +49,12 @@ type
     of nkAssign:
       assignName*: string
       assignValue*: Node
+    of nkIf:
+      ifCond*: Node
+      ifThen*: Node
+      ifElse*: Node       ## nil if no else branch
+    of nkIs:
+      isValue*: Node
 
 proc opStr*(o: BinOp): string =
   case o
@@ -106,5 +113,16 @@ proc render(n: Node, depth: int): string =
   of nkAssign:
     pad & "assign(" & n.assignName & ") @" & $n.line & ":" & $n.col & ts & "\n" &
       render(n.assignValue, depth + 1)
+  of nkIf:
+    var parts: seq[string] = @[]
+    parts.add pad & "if @" & $n.line & ":" & $n.col & ts
+    parts.add pad & "  cond:" & "\n" & render(n.ifCond, depth + 2)
+    parts.add pad & "  then:" & "\n" & render(n.ifThen, depth + 2)
+    if n.ifElse != nil:
+      parts.add pad & "  else:" & "\n" & render(n.ifElse, depth + 2)
+    parts.join("\n")
+  of nkIs:
+    pad & "is @" & $n.line & ":" & $n.col & ts & "\n" &
+      render(n.isValue, depth + 1)
 
 proc `$`*(n: Node): string = render(n, 0)

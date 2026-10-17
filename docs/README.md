@@ -18,7 +18,7 @@ build actually understands.
 | `is`               |   ok   |  ok   |  partial|
 | Narrow int types   |   ok   |  ok   |  partial|
 | Cast (`as`)        |   ok   |  ok   |  partial|
-| Functions          |   —    |  —    |   —     |
+| Functions          |   ok   |  ok   |  partial|
 | Comments           |   ok   |  ok   |   ok    |
 | Strings            |   —    |  —    |   —     |
 | Floats             |   ok   |  —    |   —     |

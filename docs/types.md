@@ -102,6 +102,22 @@ concrete int stays `iLit(N)` in the AST. Only the surrounding
 operation (decl, comparison, assignment, branch) gets the concrete
 type.
 
+## Function types
+
+`T(A, B)` is a function type. It appears in declaration position and
+as a type annotation in parameters. It is a full type: it has a
+return type, parameter types, and per-parameter mutability. See
+[functions.md](functions.md).
+
+```
+Int(Int)           -- function from Int to Int
+Int(Int, Bool)     -- function from (Int, Bool) to Int
+Bool(Int a$)       -- takes a mutable Int
+```
+
+Function types do not fit any integer kind or `Bool`. `Int y = f`
+where `f` is a function is a sema error.
+
 ## Type resolution
 
 `resolveTypeName(name, line, col)` maps a `tkType` token's text to a
@@ -113,4 +129,6 @@ type.
 - `"Bool"` -> `Bool`
 - anything else -> sema error `unknown type: <name>`
 
-`Nul` is not resolvable. User code cannot declare a `Nul` variable.
+`T(A, B)` is not handled by `resolveTypeName`; it is parsed as a
+type-expression AST and resolved by `visitTypeNode`. `Nul` is not
+resolvable. User code cannot declare a `Nul` variable or function.

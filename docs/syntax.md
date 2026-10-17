@@ -25,6 +25,9 @@ Reserved (lowercase only; uppercase forms stay `tkType`):
 - `is`
 - `as`
 
+Not reserved: `fn`, `func`, `def`, `return`, `let`, `var`. Functions
+use type expressions (`Int(Int a) f = ...`) instead of a keyword.
+
 No other reserved words. `iff`, `elsewhere`, `issue` are plain
 identifiers. `true`/`false` are not keywords — see
 [types.md](types.md).

@@ -135,6 +135,28 @@ Lowered by (source kind, target kind):
 - `Bool -> Int`: `zext i1 to iN`.
 - `Bool -> Bool`: passthrough.
 
+### Functions
+
+Declarations: `define iN @f(iN %0, ...)`. Each function is
+registered as a declaration first (pass 1), then bodies are emitted
+(pass 2), then `main` body (pass 3). LLVM prints definitions in any
+order.
+
+Parameters: immutable parameters are passed by value and copied into
+an `alloca` inside the function. Mutable parameters (`$`) are passed
+as LLVM `ptr` to the caller's `alloca`; writes go through the
+pointer.
+
+Calls: `call iN @f(iN %arg, ptr %slot, ...)`. Argument coercion
+follows the same rules as arithmetic: literals at target width,
+concrete ints via trunc/sext/zext.
+
+Recursion and forward refs work because sema registers all top-level
+functions before checking any body.
+
+`main` return: same as before, the last value expression. Function
+declarations at top level are skipped from the main body.
+
 ## Not supported (yet)
 
 - **Integer overflow.** `add/sub/mul` use LLVM wrap semantics
@@ -142,6 +164,5 @@ Lowered by (source kind, target kind):
   overflow will not panic.
 - **Division by zero.** Sema rejects literal `1/0`; runtime
   `x/0` will hit LLVM UB.
-- **Functions.** No `nkFn`, no `nkCall`, no `nkFnType` in codegen.
 - **Multiple `main`s.** Only one module, one `main` per build.
 - **`print`, strings, floats.**

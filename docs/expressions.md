@@ -118,6 +118,33 @@ The result type is the target. As a value, the cast is checked
 against `ctx` like any other expression: `Int z = (5 as U8)` is a
 sema error because `U8` does not fit `Int`.
 
+## Function types and calls
+
+`T(A, B)` is a function type: takes `A` and `B`, returns `T`. It is
+usable in declaration position:
+
+```
+Int(Int a) f = a + 1
+Int(Int a, Int b) add = a + b
+U8(U8 a) inc = a + 1
+```
+
+Parameters may be named (`Int a`), unnamed (`Int`), or marked
+mutable with `$` (`Int a$`). A function declaration is a regular
+declaration; the body is a single expression checked against the
+return type. See [functions.md](functions.md).
+
+Call is postfix `f(args)`. Zero arguments allowed: `f()`. Trailing
+comma tolerated. The callee must resolve to a function type; calling
+an `Int` is a sema error.
+
+Precedence, loosest to tightest: binary operators < `as` < unary `-`
+< call `(...)` < primary. So:
+
+- `-f(1)` is `-(f(1))`.
+- `-1 as U8` is `(-1) as U8`.
+- `f(1) as U8` is `(f(1)) as U8`.
+
 ## `if` / `elif` / `else`
 
 `if` is an expression. It can appear as a statement or as the value

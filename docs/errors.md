@@ -49,6 +49,31 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
 - `unreachable statement after is` — any statement after `is` in
   the same block.
 
+### Functions
+
+- `function declarations are only allowed at program top level` —
+  fn decl inside a block.
+- `function declaration requires a body: <name>` — `Int(Int a) f`
+  without `=`.
+- `Nul-returning functions not implemented yet` — `Nul` return type.
+- `mutable parameter must be named` — `Int a$` is fine, unnamed
+  mutable is not.
+- `body of <name> has type <got>, expected <type>` — body value does
+  not fit the return type.
+
+### Calls
+
+- `cannot call <type>` — callee is not a function type (`x(1)` where
+  `x: Int`).
+- `call expects N argument(s), got M` — argument count mismatch.
+- `argument N has type <got>, expected <type>` — argument type does
+  not fit the parameter.
+- `argument N must be mutable (ident bound to a mutable variable),
+  got a value expression` — a mutable parameter received a literal
+  or a computed value.
+- `argument N must be mutable, but <name> is immutable` — mutable
+  parameter received an immutable variable.
+
 ### `if`
 
 - `if condition has type <type>, expected Bool` — `Int c = 1; if c ...`.

@@ -18,6 +18,12 @@ type
     tkSemicolon  ## ; optional statement separator
     tkBang       ## ! mutability marker
     tkDollar     ## $ mutability marker
+    tkEqEq       ## ==
+    tkBangEq     ## !=
+    tkLt         ## <
+    tkLe         ## <=
+    tkGt         ## >
+    tkGe         ## >=
     tkEOF        ## end of input
 
   Token* = object
@@ -46,4 +52,10 @@ proc `$`*(t: Token): string =
     of tkSemicolon: "tkSemicolon"
     of tkBang:    "tkBang"
     of tkDollar:  "tkDollar"
+    of tkEqEq:    "tkEqEq"
+    of tkBangEq:  "tkBangEq"
+    of tkLt:      "tkLt"
+    of tkLe:      "tkLe"
+    of tkGt:      "tkGt"
+    of tkGe:      "tkGe"
     of tkEOF:     "tkEOF"

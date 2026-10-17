@@ -91,3 +91,19 @@ suite "lexer":
   test "dollar in decl position":
     let ts = lexAll("Int x$ = 10")
     check ts[2].kind == tkDollar
+
+  test "comparison operator tokens":
+    check lexAll("<")[0].kind == tkLt
+    check lexAll("<=")[0].kind == tkLe
+    check lexAll(">")[0].kind == tkGt
+    check lexAll(">=")[0].kind == tkGe
+    check lexAll("==")[0].kind == tkEqEq
+    check lexAll("!=")[0].kind == tkBangEq
+
+  test "bang adjacent to equals is bangEq":
+    check lexAll("x != y")[1].kind == tkBangEq
+
+  test "bang followed by space stays bang":
+    let ts = lexAll("x! = y")
+    check ts[1].kind == tkBang
+    check ts[2].kind == tkEquals

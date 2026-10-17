@@ -21,6 +21,10 @@ proc isIdentChar*(c: char): bool =
 proc wordKind*(first: char): TokenKind =
   if first in {'A'..'Z'}: tkType else: tkIdent
 
+proc peekChar*(l: Lexer, off: int = 0): char =
+  if l.pos + off < l.src.len: l.src[l.pos + off]
+  else: '\0'
+
 proc initLexer*(src: string): Lexer =
   Lexer(src: src, pos: 0, line: 1, col: 1)
 
@@ -85,9 +89,37 @@ proc lexAll*(src: string): seq[Token] =
     of '%': l.adv(); result.add Token(kind: tkPercent, line: startLine, col: startCol)
     of '(': l.adv(); result.add Token(kind: tkLParen,  line: startLine, col: startCol)
     of ')': l.adv(); result.add Token(kind: tkRParen,  line: startLine, col: startCol)
-    of '=': l.adv(); result.add Token(kind: tkEquals,  line: startLine, col: startCol)
+    of '=':
+      l.adv()
+      if l.peekChar() == '=':
+        l.adv()
+        result.add Token(kind: tkEqEq, line: startLine, col: startCol)
+      else:
+        result.add Token(kind: tkEquals, line: startLine, col: startCol)
     of ';': l.adv(); result.add Token(kind: tkSemicolon, line: startLine, col: startCol)
-    of '!': l.adv(); result.add Token(kind: tkBang,      line: startLine, col: startCol)
+    # <NOTE>#25: '!' + '=' adjacent lexes as tkBangEq; 'Int x! = 5' needs
+    # a space between ! and = to mean immutable-with-init.
+    of '!':
+      l.adv()
+      if l.peekChar() == '=':
+        l.adv()
+        result.add Token(kind: tkBangEq, line: startLine, col: startCol)
+      else:
+        result.add Token(kind: tkBang, line: startLine, col: startCol)
+    of '<':
+      l.adv()
+      if l.peekChar() == '=':
+        l.adv()
+        result.add Token(kind: tkLe, line: startLine, col: startCol)
+      else:
+        result.add Token(kind: tkLt, line: startLine, col: startCol)
+    of '>':
+      l.adv()
+      if l.peekChar() == '=':
+        l.adv()
+        result.add Token(kind: tkGe, line: startLine, col: startCol)
+      else:
+        result.add Token(kind: tkGt, line: startLine, col: startCol)
     of '$': l.adv(); result.add Token(kind: tkDollar,    line: startLine, col: startCol)
     of 'a'..'z', 'A'..'Z', '_': result.add l.lexWord()
     else:

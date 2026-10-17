@@ -168,6 +168,22 @@ suite "llvm-c bindings":
     check "merge:" in ir
     check "else:" notin ir
 
+  test "emitModule block shadowing creates separate alloca":
+    # Int x = 1 (Int x = 2 x) x  ->  two allocas named x, both stored
+    let outerDecl = Node(kind: nkDecl, declName: "x", declType: "Int",
+                         declInit: Node(kind: nkInt, intVal: 1))
+    let innerDecl = Node(kind: nkDecl, declName: "x", declType: "Int",
+                         declInit: Node(kind: nkInt, intVal: 2))
+    let innerRead = Node(kind: nkIdent, identName: "x")
+    let innerBlock = Node(kind: nkBlock, stmts: @[innerDecl, innerRead])
+    let outerRead = Node(kind: nkIdent, identName: "x")
+    let p = Node(kind: nkProgram, stmts: @[outerDecl, innerBlock, outerRead])
+    let ir = emitModule(p)
+    # LLVM auto-suffixes duplicate names; count store instructions as
+    # the ground truth for "two declarations actually emitted".
+    check "store i64 1" in ir
+    check "store i64 2" in ir
+
   test "emitModule value-if produces phi":
     # non-constant cond so LLVM cannot fold the branches away.
     let p = Node(kind: nkProgram, stmts: @[

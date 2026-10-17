@@ -12,8 +12,27 @@ type
     mainFn: LLVMValueRef
     i64: LLVMTypeRef
     i1: LLVMTypeRef
-    vars: Table[string, LLVMValueRef]   ## name -> alloca
-    varTypes: Table[string, LLVMTypeRef]  ## name -> slot LLVM type (i64 or i1)
+    # <NOTE>#45: scoped symbol tables. Lookup walks from innermost to
+    # outermost. Mirrors the sema scope model; shadowing produces a new
+    # alloca per declaration and the outer one becomes visible again
+    # after the block closes.
+    scopes: seq[Table[string, LLVMValueRef]]
+    varTypes: seq[Table[string, LLVMTypeRef]]
+
+proc lookupVar(c: CodegenCtx, name: string): LLVMValueRef =
+  for i in countdown(c.scopes.len - 1, 0):
+    if c.scopes[i].hasKey(name): return c.scopes[i][name]
+  nil
+
+proc lookupVarType(c: CodegenCtx, name: string, default: LLVMTypeRef): LLVMTypeRef =
+  for i in countdown(c.varTypes.len - 1, 0):
+    if c.varTypes[i].hasKey(name): return c.varTypes[i][name]
+  default
+
+proc defineVar(c: var CodegenCtx, name: string, slot: LLVMValueRef,
+               ty: LLVMTypeRef) =
+  c.scopes[^1][name] = slot
+  c.varTypes[^1][name] = ty
 
 proc cmpPredicate(op: BinOp): cint =
   case op
@@ -66,13 +85,56 @@ proc emitExpr(c: CodegenCtx, n: Node): LLVMValueRef =
         rhs = emitExpr(c, n.right)
       LLVMBuildICmp(c.builder, cmpPredicate(n.op), lhs, rhs, "cmp")
   of nkIdent:
-    let slot = c.vars.getOrDefault(n.identName)
+    let slot = c.lookupVar(n.identName)
     if slot == nil:
       raise newException(ValueError,
         "codegen: undefined variable: " & n.identName)
     let loadName = n.identName & "_load"
-    let ty = c.varTypes.getOrDefault(n.identName, c.i64)
+    let ty = c.lookupVarType(n.identName, c.i64)
     LLVMBuildLoad2(c.builder, ty, slot, loadName.cstring)
+  of nkIf:
+    # <NOTE>#46: value-if. Both branches must be value expressions
+    # (literals, idents, binops). Statement branches (decl/assign/block)
+    # need emitStmt's path, which is handled in emitStmt below.
+    # <NOTE>#47: branch values must match the phi type. In Bool context
+    # literals are iLit-emitted i64; convert them to i1 for the phi.
+    if n.typ == nil or n.typ.kind == tyNul:
+      raise newException(ValueError,
+        "codegen: statement if in value position")
+    let llvmTy = if n.typ.kind == tyBool: c.i1 else: c.i64
+    var cond = emitExpr(c, n.ifCond)
+    let condIsBool = n.ifCond.typ != nil and n.ifCond.typ.kind == tyBool
+    if not condIsBool:
+      cond = toBool(c, cond)
+    let thenBB = LLVMCreateBasicBlockInContext(c.ctx, "then")
+    let elseBB = LLVMCreateBasicBlockInContext(c.ctx, "else")
+    let mergeBB = LLVMCreateBasicBlockInContext(c.ctx, "merge")
+    LLVMAppendExistingBasicBlock(c.mainFn, thenBB)
+    LLVMAppendExistingBasicBlock(c.mainFn, elseBB)
+    LLVMAppendExistingBasicBlock(c.mainFn, mergeBB)
+    discard LLVMBuildCondBr(c.builder, cond, thenBB, elseBB)
+    LLVMPositionBuilderAtEnd(c.builder, thenBB)
+    var thenVal = emitExpr(c, n.ifThen)
+    if llvmTy == c.i1 and not (n.ifThen.typ != nil and n.ifThen.typ.kind == tyBool):
+      thenVal = toBool(c, thenVal)
+    discard LLVMBuildBr(c.builder, mergeBB)
+    LLVMPositionBuilderAtEnd(c.builder, elseBB)
+    var elseVal: LLVMValueRef
+    if n.ifElse != nil:
+      elseVal = emitExpr(c, n.ifElse)
+      if llvmTy == c.i1 and not (n.ifElse.typ != nil and n.ifElse.typ.kind == tyBool):
+        elseVal = toBool(c, elseVal)
+    else:
+      elseVal = LLVMConstInt(llvmTy, 0, 0)
+    discard LLVMBuildBr(c.builder, mergeBB)
+    LLVMPositionBuilderAtEnd(c.builder, mergeBB)
+    let phi = LLVMBuildPhi(c.builder, llvmTy, "if_phi")
+    var vals: array[2, LLVMValueRef]
+    var blks: array[2, LLVMBasicBlockRef]
+    vals[0] = thenVal; blks[0] = thenBB
+    vals[1] = elseVal; blks[1] = elseBB
+    LLVMAddIncoming(phi, addr vals[0], addr blks[0], 2)
+    phi
   else:
     raise newException(ValueError,
       "codegen: unsupported node: " & $n.kind)
@@ -88,8 +150,7 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       if n.declType == "Bool": c.i1
       else: c.i64          # Int, I64, anything else sema already rejected
     let slot = LLVMBuildAlloca(c.builder, llvmTy, n.declName.cstring)
-    c.vars[n.declName] = slot
-    c.varTypes[n.declName] = llvmTy
+    c.defineVar(n.declName, slot, llvmTy)
     var initVal: LLVMValueRef
     if n.declInit == nil:
       initVal = LLVMConstInt(llvmTy, 0, 0)
@@ -101,11 +162,11 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     discard LLVMBuildStore(c.builder, initVal, slot)
     nil
   of nkAssign:
-    let slot = c.vars.getOrDefault(n.assignName)
+    let slot = c.lookupVar(n.assignName)
     if slot == nil:
       raise newException(ValueError,
         "codegen: assign to undeclared: " & n.assignName)
-    let llvmTy = c.varTypes.getOrDefault(n.assignName, c.i64)
+    let llvmTy = c.lookupVarType(n.assignName, c.i64)
     var val = emitExpr(c, n.assignValue)
     let valIsBool = n.assignValue.typ != nil and n.assignValue.typ.kind == tyBool
     if llvmTy == c.i1 and not valIsBool:
@@ -115,20 +176,20 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   of nkInt, nkIdent, nkUnary, nkBinOp:
     emitExpr(c, n)
   of nkBlock:
-    # <NOTE>#45: codegen has no scope model yet; block stmts are emitted
-    # flat. Vars declared in a block overwrite outer names in c.vars
-    # (shadowing not modelled in codegen; sema already checked validity).
+    c.scopes.add initTable[string, LLVMValueRef]()
+    c.varTypes.add initTable[string, LLVMTypeRef]()
     var lastVal: LLVMValueRef = nil
     for s in n.stmts:
       let v = emitStmt(c, s)
       if v != nil: lastVal = v
+    c.scopes.setLen(c.scopes.len - 1)
+    c.varTypes.setLen(c.varTypes.len - 1)
     lastVal
   of nkIf:
-    # <NOTE>#44: statement-position if — branches are statements, result
-    # discarded. Value-if (in decl init) is 5d (phi).
+    # <NOTE>#44: if with a non-nul type is a value — emit via emitExpr
+    # (phi in merge block). Statement if — branches are statements.
     if n.typ != nil and n.typ.kind != tyNul:
-      raise newException(ValueError,
-        "codegen: if as value not implemented yet (5d)")
+      return emitExpr(c, n)
     var cond = emitExpr(c, n.ifCond)
     let condIsBool = n.ifCond.typ != nil and n.ifCond.typ.kind == tyBool
     if not condIsBool:
@@ -179,8 +240,8 @@ proc emitModule*(program: Node): string =
 
   var c = CodegenCtx(ctx: ctx, builder: builder, mainFn: mainFn,
                      i64: i64, i1: i1,
-                     vars: initTable[string, LLVMValueRef](),
-                     varTypes: initTable[string, LLVMTypeRef]())
+                     scopes: @[initTable[string, LLVMValueRef]()],
+                     varTypes: @[initTable[string, LLVMTypeRef]()])
 
   var retVal: LLVMValueRef = nil
   var retIsBool = false

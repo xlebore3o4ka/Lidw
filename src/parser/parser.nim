@@ -152,28 +152,21 @@ proc parseAssign(p: var Parser): Node =
   result = Node(kind: nkAssign, assignName: nameTok.word, assignValue: val,
                 line: eqTok.line, col: eqTok.col)
 
-proc parseBody(p: var Parser): seq[Node] =
-  ## Parses stmts until elif/else/EOF/rparen; ';' skipped.
-  result = @[]
-  while true:
-    while p.peek().kind == tkSemicolon: p.advance()
-    if p.peek().kind in {tkElif, tkElse, tkEOF, tkRParen}: break
-    result.add parseStmt(p)
-
-proc bodyOrSingle(p: var Parser, stmts: seq[Node], what: string,
-                  line, col: int): Node =
-  if stmts.len == 0:
+# <NOTE>#48: an if/else branch takes exactly ONE statement without
+# parentheses. A multi-stmt body must be an explicit `( ... )` block.
+# This prevents a bare branch from absorbing the next statement of the
+# enclosing scope, and it keeps `nkBlock` strictly tied to parentheses.
+proc parseBodyNode(p: var Parser, what: string, line, col: int): Node =
+  while p.peek().kind == tkSemicolon: p.advance()
+  if p.peek().kind in {tkElif, tkElse, tkEOF, tkRParen}:
     raise lidwError(lekParse, what & " requires a body", line, col)
-  if stmts.len == 1:
-    stmts[0]
-  else:
-    Node(kind: nkBlock, stmts: stmts, line: line, col: col)
+  parseStmt(p)
 
 proc parseIfLike(p: var Parser, tok: Token): Node =
   ## Called after tkIf/tkElif was consumed. tok is that token.
   let cond = parseExpr(p, 0)
-  let thenStmts = parseBody(p)
-  let thenBr = bodyOrSingle(p, thenStmts, "if", tok.line, tok.col)
+  let thenBr = parseBodyNode(p, "if", tok.line, tok.col)
+  while p.peek().kind == tkSemicolon: p.advance()
   var elseBr: Node = nil
   if p.peek().kind == tkElif:
     let elifTok = p.peek()
@@ -182,8 +175,7 @@ proc parseIfLike(p: var Parser, tok: Token): Node =
   elif p.peek().kind == tkElse:
     let elseTok = p.peek()
     p.advance()
-    let elseStmts = parseBody(p)
-    elseBr = bodyOrSingle(p, elseStmts, "else", elseTok.line, elseTok.col)
+    elseBr = parseBodyNode(p, "else", elseTok.line, elseTok.col)
   Node(kind: nkIf, ifCond: cond, ifThen: thenBr, ifElse: elseBr,
        line: tok.line, col: tok.col)
 

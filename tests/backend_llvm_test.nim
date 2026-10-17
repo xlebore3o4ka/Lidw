@@ -5,6 +5,7 @@ import std/strutils
 import ../src/backend/llvm_c
 import ../src/backend/codegen
 import ../src/parser/ast
+import ../src/types
 
 suite "llvm-c bindings":
   test "create and dispose in order":
@@ -166,6 +167,20 @@ suite "llvm-c bindings":
     check "then:" in ir
     check "merge:" in ir
     check "else:" notin ir
+
+  test "emitModule value-if produces phi":
+    # non-constant cond so LLVM cannot fold the branches away.
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "c", declType: "Bool",
+           declInit: Node(kind: nkInt, intVal: 1)),
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkIf, typ: i64Type(),
+             ifCond: Node(kind: nkIdent, identName: "c", typ: boolType()),
+             ifThen: Node(kind: nkInt, intVal: 10, typ: iLitType(10)),
+             ifElse: Node(kind: nkInt, intVal: 20, typ: iLitType(20))))
+    ])
+    let ir = emitModule(p)
+    check "if_phi = phi i64" in ir
 
   test "main returns 42, verifies":
     let ctx = LLVMContextCreate()

@@ -46,10 +46,16 @@ Operand rules (context-less):
 
 - `iLit + iLit` folds: `1 + 2` → `iLit(3)`. Overflow and division by
   zero are sema errors at this point.
-- `Int` with `Int` → `Int`.
-- `Int` with `iLit`, or `iLit` with `Int` → `Int`; the literal is
-  checked to fit `Int`.
-- `Bool` operand → sema error `cannot unify ...`.
+- Two concrete integers of the same kind → that kind:
+  `Int + Int → Int`, `U8 + U8 → U8`.
+- Both signed, or both unsigned, different widths → the wider kind:
+  `I8 + I16 → I16`, `U8 + U16 → U16`.
+- Mixed signed/unsigned → smallest signed kind that holds both:
+  `U8 + I8 → I16`, `U16 + I16 → I32`, `U32 + I32 → I64`.
+  `U64 + I64` has no common type; sema error.
+- `iLit(N)` with a concrete kind adapts if `N` fits; otherwise sema
+  error. Example: `U8 x = 5; x + 200` is ok, `x + 300` is not.
+- `Bool` operand → sema error `arithmetic requires Int`.
 - `Nul` operand → sema error.
 
 Under a declared context (`Int x = ...`), the top-level expression is
@@ -78,6 +84,39 @@ Mixing `Int` and `Bool` in one comparison is a sema error.
 
 Comparisons do **not** fold. `1 < 2` produces a `Bool`-typed node
 without a stored value. Codegen (not implemented) will compute it.
+
+## Cast: `as`
+
+```
+expr as Ty
+```
+
+Explicit cast. `Ty` is a `tkType` token (uppercase first letter).
+Precedence: binds tighter than binary operators, looser than unary:
+
+```
+-x as U8       -- (-x) as U8
+2 * 5 as U8    -- 2 * (5 as U8)
+```
+
+Chained left to right: `x as Int as Bool`.
+
+Source must be a value (Int, Bool, or `iLit`). `Nul` cannot be cast.
+Target must be a known type name (`Int`, `U8`, `Bool`, ...). The
+cast is explicit; there is no `fits`-check on the source. Values
+wrap (truncate) and extend by source signedness:
+
+```
+Int v = 300
+U8 x = v as U8        -- x = 44   (truncate)
+Bool b = v as Bool    -- b = true (v != 0)
+Int back = b as Int   -- back = 1
+U8 y = 300 as U8      -- y = 44   (literal folded at U8 width)
+```
+
+The result type is the target. As a value, the cast is checked
+against `ctx` like any other expression: `Int z = (5 as U8)` is a
+sema error because `U8` does not fit `Int`.
 
 ## `if` / `elif` / `else`
 

@@ -16,6 +16,8 @@ build actually understands.
 | Blocks & scope     |   ok   |  ok   |  partial|
 | `if`/`elif`/`else` |   ok   |  ok   |  partial|
 | `is`               |   ok   |  ok   |  partial|
+| Narrow int types   |   ok   |  ok   |  partial|
+| Cast (`as`)        |   ok   |  ok   |  partial|
 | Functions          |   —    |  —    |   —     |
 | Comments           |   ok   |  ok   |   ok    |
 | Strings            |   —    |  —    |   —     |

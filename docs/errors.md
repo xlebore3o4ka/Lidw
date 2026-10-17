@@ -59,6 +59,15 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
 
 - `cannot unify <lt> and <rt> for <op>` — binary operator with
   incompatible operand types.
+- `arithmetic requires Int, got <lt> and <rt>` — non-Int operand
+  (Bool, Nul) in an arithmetic operator.
+- `literal iLit(N) does not fit <type>` — literal not in the target
+  range (`U8 x = 5; x + 300`).
+- `no common type for <lt> and <rt>` — mixed operands with no Int
+  kind that holds both (`U64 + I64`).
+- `cannot cast <type>` — `as` on `Nul` or on a future non-value type.
+- `cast to <type> does not fit <ctx>` — cast result does not satisfy
+  the surrounding declaration context.
 - `operator <op> requires Int operands, got <lt> and <rt>` —
   ordering on non-Int.
 - `operator <op> requires matching types, got <lt> and <rt>` —

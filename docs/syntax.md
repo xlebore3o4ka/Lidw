@@ -23,6 +23,7 @@ Reserved (lowercase only; uppercase forms stay `tkType`):
 - `elif`
 - `else`
 - `is`
+- `as`
 
 No other reserved words. `iff`, `elsewhere`, `issue` are plain
 identifiers. `true`/`false` are not keywords — see

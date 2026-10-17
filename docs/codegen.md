@@ -106,6 +106,35 @@ Branches of a value-`if` can be value-blocks:
 Int x = if c (is 5) else (is 7); x
 ```
 
+### Narrow int types
+
+`I8 / U8 / I16 / U16 / I32 / U32 / U64` are supported end-to-end.
+
+- Declarations: `alloca iN`, `store iN V`. An `iLit` initializer is
+  emitted directly at width; the value already fits per sema.
+- Binary arithmetic: both operands are coerced to a common kind
+  (same rules as sema), then a single-width instruction is emitted.
+  Division and modulo use `sdiv/udiv` and `srem/urem` based on the
+  target kind. Overflow wraps silently at runtime.
+- Comparisons: same common-kind coercion. Predicates are
+  `icmp slt/sle/sgt/sge` for signed kinds and `icmp ult/ule/ugt/uge`
+  for unsigned.
+- Cast is the only way to move a value between concrete int kinds
+  without an arithmetic operator; see below.
+- `main` returns `i64`. Narrow results are extended by source
+  signedness: `sext` for `I8/I16/I32`, `zext` for `U8/U16/U32/U64`.
+
+### Cast (`as`)
+
+Lowered by (source kind, target kind):
+
+- `iLit -> Int`: `LLVMConstInt` at target width (wrap).
+- `iLit -> Bool`: `LLVMConstInt(i1, v != 0, 0)`.
+- `Int -> Int`: `trunc` / `sext` / `zext` by source signedness.
+- `Int -> Bool`: `icmp ne iN %v, 0`.
+- `Bool -> Int`: `zext i1 to iN`.
+- `Bool -> Bool`: passthrough.
+
 ## Not supported (yet)
 
 - **Integer overflow.** `add/sub/mul` use LLVM wrap semantics

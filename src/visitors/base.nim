@@ -1,7 +1,7 @@
 # Visitor dispatch over LIDW AST.
 # <NOTE>#7: generic visit; V implements handlers and decides traversal order.
 
-import ./parser/ast
+import ../parser/ast
 
 proc visit*[V](v: var V, n: Node) =
   ## Dispatch on n.kind to V's handler.

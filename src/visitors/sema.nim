@@ -360,7 +360,33 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
   let declT = visitTypeNode(v, n.declTypeNode)
   let isFnDecl = declT.kind == tyFn
   if isFnDecl:
-    # <TODO>#81: visit fn body in Fa.3b. For now register the symbol.
+    # <NOTE>#84: fn body is visited in a fresh scope. Parameters are
+    # bound by name (unnamed params are not bindable). Fa.7 will honor
+    # mutable params (`$`); today all params are immutable.
+    if n.declInit == nil:
+      raise lidwError(lekSema,
+        "function declaration requires a body: " & n.declName,
+        n.line, n.col)
+    let retT = declT.fnRet
+    if retT.kind == tyNul:
+      raise lidwError(lekSema,
+        "Nul-returning functions not implemented yet",
+        n.line, n.col)
+    discard v.symbols.open()
+    let saveCtx = v.ctx
+    for i, p in n.declTypeNode.fnParams:
+      if p.paramName.len > 0:
+        v.symbols.define(p.paramName, declT.fnParams[i],
+                         muImmutable, p.line, p.col)
+    v.ctx = retT
+    visit(v, n.declInit)
+    if n.declInit.typ == nil or not fits(n.declInit.typ, retT):
+      let got = if n.declInit.typ == nil: "<untyped>" else: $n.declInit.typ
+      raise lidwError(lekSema,
+        "body of " & n.declName & " has type " & got &
+        ", expected " & $retT, n.declInit.line, n.declInit.col)
+    v.ctx = saveCtx
+    v.symbols.close()
     v.symbols.define(n.declName, declT, n.declMut, n.line, n.col)
     n.typ = declT
     return

@@ -9,6 +9,18 @@ type
     line*: int
     col*: int
 
+# <NOTE>#13: identifier shape is ASCII-only for now; change isIdentStart /
+# isIdentChar when unicode identifiers become a thing. wordKind is the
+# single place deciding ident vs type by first-letter case.
+proc isIdentStart*(c: char): bool =
+  c in {'a'..'z', 'A'..'Z', '_'}
+
+proc isIdentChar*(c: char): bool =
+  c in {'a'..'z', 'A'..'Z', '0'..'9', '_'}
+
+proc wordKind*(first: char): TokenKind =
+  if first in {'A'..'Z'}: tkType else: tkIdent
+
 proc initLexer*(src: string): Lexer =
   Lexer(src: src, pos: 0, line: 1, col: 1)
 
@@ -45,6 +57,15 @@ proc lexNumber(l: var Lexer): Token =
   else:
     Token(kind: tkInt, intVal: parseInt(s).int64, line: startLine, col: startCol)
 
+proc lexWord(l: var Lexer): Token =
+  let startLine = l.line
+  let startCol = l.col
+  var s = ""
+  while l.pos < l.src.len and isIdentChar(l.src[l.pos]):
+    s.add l.src[l.pos]
+    l.adv()
+  Token(kind: wordKind(s[0]), word: s, line: startLine, col: startCol)
+
 proc lexAll*(src: string): seq[Token] =
   var l = initLexer(src)
   while true:
@@ -64,6 +85,8 @@ proc lexAll*(src: string): seq[Token] =
     of '%': l.adv(); result.add Token(kind: tkPercent, line: startLine, col: startCol)
     of '(': l.adv(); result.add Token(kind: tkLParen,  line: startLine, col: startCol)
     of ')': l.adv(); result.add Token(kind: tkRParen,  line: startLine, col: startCol)
+    of '=': l.adv(); result.add Token(kind: tkEquals,  line: startLine, col: startCol)
+    of 'a'..'z', 'A'..'Z', '_': result.add l.lexWord()
     else:
       let cp = l.src.runeAt(l.pos)
       raise lidwError(lekLex,

@@ -12,12 +12,16 @@ type
     tkPercent    ## %
     tkLParen     ## (
     tkRParen     ## )
+    tkIdent      ## lowercase-initial word: variable, keyword, name
+    tkType       ## uppercase-initial word: type name
+    tkEquals     ## =
     tkEOF        ## end of input
 
   Token* = object
     kind*: TokenKind
     intVal*: int64    ## valid iff kind == tkInt
     floatVal*: float  ## valid iff kind == tkFloat
+    word*: string     ## valid iff kind in {tkIdent, tkType}
     line*: int        ## 1-based line of token start
     col*: int         ## 1-based column of token start
 
@@ -33,4 +37,7 @@ proc `$`*(t: Token): string =
     of tkPercent: "tkPercent"
     of tkLParen:  "tkLParen"
     of tkRParen:  "tkRParen"
+    of tkIdent:   "tkIdent(" & t.word & ")"
+    of tkType:    "tkType(" & t.word & ")"
+    of tkEquals:  "tkEquals"
     of tkEOF:     "tkEOF"

@@ -38,10 +38,17 @@ proc fits*(t, ctx: LidwType): bool =
     case t.kind
     of tyI64:  true
     of tyILit: true          # int64 value always inside i64 range
+    of tyBool: false         # need explicit comparison
   of tyILit:
     case t.kind
     of tyILit: t.value == ctx.value
     of tyI64:  false
+    of tyBool: false
+  of tyBool:
+    case t.kind
+    of tyBool: true
+    of tyILit: true          # 0 = false, !=0 = true
+    of tyI64:  false         # need explicit ==/!= to convert
 
 proc foldInt(op: BinOp, a, b: int64, line, col: int): int64 =
   ## Compute a op b; raise lekSema on overflow or division by zero.
@@ -73,6 +80,10 @@ proc foldInt(op: BinOp, a, b: int64, line, col: int): int64 =
       raise lidwError(lekSema, "division by zero", line, col)
     if a == low(int64) and b == -1: return 0
     a mod b
+  of boEq, boNe, boLt, boLe, boGt, boGe:
+    # <TODO>#27: comparison folding — P4c
+    raise lidwError(lekSema,
+      "comparison " & opStr(op) & " not implemented yet", line, col)
 
 proc visitInt*(v: var SemaVisitor, n: Node) =
   # <NOTE>#11: literal keeps iLit under context; fits() is a check, not

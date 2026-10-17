@@ -7,6 +7,7 @@ import ../types
 type
   BinOp* = enum
     boAdd, boSub, boMul, boDiv, boMod
+    boEq, boNe, boLt, boLe, boGt, boGe
 
   UnOp* = enum
     uoNeg
@@ -55,6 +56,12 @@ proc opStr*(o: BinOp): string =
   of boMul: "*"
   of boDiv: "/"
   of boMod: "%"
+  of boEq: "=="
+  of boNe: "!="
+  of boLt: "<"
+  of boLe: "<="
+  of boGt: ">"
+  of boGe: ">="
 
 proc unopStr*(o: UnOp): string =
   case o

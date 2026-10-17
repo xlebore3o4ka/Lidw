@@ -8,5 +8,6 @@ import ./errors
 proc resolveTypeName*(name: string, line, col: int): LidwType =
   case name
   of "Int", "I64": i64Type()
+  of "Bool": boolType()
   else:
     raise lidwError(lekSema, "unknown type: " & name, line, col)

@@ -120,3 +120,26 @@ suite "parser":
 
   test "use-postfix is still parse error":
     check expectParse("Int x = 10; x!") == lekParse
+
+  test "comparison precedence lower than add":
+    let n = p("1 + 2 < 3")
+    check n.stmts[0].kind == nkBinOp
+    check n.stmts[0].op == boLt
+    check n.stmts[0].left.kind == nkBinOp
+    check n.stmts[0].left.op == boAdd
+    check n.stmts[0].right.kind == nkInt
+
+  test "comparison left-assoc":
+    let n = p("1 < 2 < 3")
+    check n.stmts[0].kind == nkBinOp
+    check n.stmts[0].op == boLt
+    check n.stmts[0].left.kind == nkBinOp
+    check n.stmts[0].left.op == boLt
+
+  test "not-equal token parses":
+    let n = p("1 != 2")
+    check n.stmts[0].kind == nkBinOp
+    check n.stmts[0].op == boNe
+
+  test "adjacent bang-equals in decl is parse error":
+    check expectParse("Int x!=5") == lekParse

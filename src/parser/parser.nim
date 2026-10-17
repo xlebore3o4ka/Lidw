@@ -16,8 +16,9 @@ proc advance(p: var Parser) = inc p.pos
 
 proc precedence(kind: TokenKind): int =
   case kind
-  of tkPlus, tkMinus: 1
-  of tkStar, tkSlash, tkPercent: 2
+  of tkEqEq, tkBangEq, tkLt, tkLe, tkGt, tkGe: 1
+  of tkPlus, tkMinus: 2
+  of tkStar, tkSlash, tkPercent: 3
   else: 0
 
 proc binOpFrom(kind: TokenKind): BinOp =
@@ -27,6 +28,12 @@ proc binOpFrom(kind: TokenKind): BinOp =
   of tkStar: boMul
   of tkSlash: boDiv
   of tkPercent: boMod
+  of tkEqEq: boEq
+  of tkBangEq: boNe
+  of tkLt: boLt
+  of tkLe: boLe
+  of tkGt: boGt
+  of tkGe: boGe
   else:
     raise newException(AssertionDefect, "binOpFrom: not a binary op: " & $kind)
 

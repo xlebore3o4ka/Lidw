@@ -13,6 +13,7 @@ type
   SemaVisitor* = object
     ctx*: LidwType   ## nil = no expectation
     symbols*: Symbols
+    atTopLevel*: bool  ## true only in visitProgram's main loop
 
 proc newSemaVisitor*(ctx: LidwType = nil): SemaVisitor =
   SemaVisitor(ctx: ctx, symbols: newSymbols())
@@ -306,10 +307,21 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
 proc visitProgram*(v: var SemaVisitor, n: Node) =
   # <NOTE>#33: program root is NOT a block for 'is'; a top-level nkIs
   # statement is an error (is needs a real block to yield from).
+  # <NOTE>#89: two-pass sema. Pass 1 registers every top-level fn decl
+  # (forward refs, recursion). Pass 2 visits bodies. Blocks stay linear.
   discard v.symbols.open()
   let saveCtx = v.ctx
+  let saveTop = v.atTopLevel
   try:
     v.ctx = nil
+    # Pass 1: fn symbols.
+    for s in n.stmts:
+      if s.kind == nkDecl and s.declTypeNode != nil and
+         s.declTypeNode.kind == nkFnType:
+        let fnT = visitTypeNode(v, s.declTypeNode)
+        v.symbols.define(s.declName, fnT, s.declMut, s.line, s.col)
+    # Pass 2: bodies.
+    v.atTopLevel = true
     for s in n.stmts:
       if s.kind == nkIs:
         raise lidwError(lekSema,
@@ -319,6 +331,7 @@ proc visitProgram*(v: var SemaVisitor, n: Node) =
   finally:
     v.symbols.close()
     v.ctx = saveCtx
+    v.atTopLevel = saveTop
   n.typ = nulType()
 
 proc visitBlock*(v: var SemaVisitor, n: Node) =
@@ -328,6 +341,8 @@ proc visitBlock*(v: var SemaVisitor, n: Node) =
   # a block is a hard error in visitIs.
   discard v.symbols.open()
   let outerCtx = v.ctx
+  let saveTop = v.atTopLevel
+  v.atTopLevel = false
   var yielded: Node = nil
   try:
     v.ctx = nil
@@ -344,6 +359,7 @@ proc visitBlock*(v: var SemaVisitor, n: Node) =
   finally:
     v.symbols.close()
     v.ctx = outerCtx
+    v.atTopLevel = saveTop
   if yielded != nil:
     n.typ = yielded.typ
     if outerCtx != nil and not fits(n.typ, outerCtx):
@@ -364,6 +380,12 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
     # <NOTE>#84: fn body is visited in a fresh scope. Parameters are
     # bound by name (unnamed params are not bindable). Fa.7 will honor
     # mutable params (`$`); today all params are immutable.
+    # <NOTE>#89: symbol was pre-registered by visitProgram pass 1.
+    # Declaring a fn inside a block is not supported.
+    if not v.atTopLevel:
+      raise lidwError(lekSema,
+        "function declarations are only allowed at program top level",
+        n.line, n.col)
     if n.declInit == nil:
       raise lidwError(lekSema,
         "function declaration requires a body: " & n.declName,
@@ -375,6 +397,8 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
         n.line, n.col)
     discard v.symbols.open()
     let saveCtx = v.ctx
+    let saveTop = v.atTopLevel
+    v.atTopLevel = false
     for i, p in n.declTypeNode.fnParams:
       if p.paramName.len > 0:
         v.symbols.define(p.paramName, declT.fnParams[i],
@@ -387,8 +411,8 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
         "body of " & n.declName & " has type " & got &
         ", expected " & $retT, n.declInit.line, n.declInit.col)
     v.ctx = saveCtx
+    v.atTopLevel = saveTop
     v.symbols.close()
-    v.symbols.define(n.declName, declT, n.declMut, n.line, n.col)
     n.typ = declT
     return
   let saveCtx = v.ctx
@@ -494,8 +518,33 @@ proc visitParam*(v: var SemaVisitor, n: Node) =
   n.typ = visitTypeNode(v, n.paramType)
 
 proc visitCall*(v: var SemaVisitor, n: Node) =
-  raise lidwError(lekSema, "call: not implemented yet (Fc)",
-                  n.line, n.col)
+  # <NOTE>#90: callee must resolve to a function type. Args count must
+  # match, and each arg must fit its parameter type. Result is the
+  # function's return type.
+  let saveCtx = v.ctx
+  v.ctx = nil
+  visit(v, n.callee)
+  v.ctx = saveCtx
+  if n.callee.typ == nil or n.callee.typ.kind != tyFn:
+    let got = if n.callee.typ == nil: "<untyped>" else: $n.callee.typ
+    raise lidwError(lekSema,
+      "cannot call " & got, n.callee.line, n.callee.col)
+  let fnT = n.callee.typ
+  if n.args.len != fnT.fnParams.len:
+    raise lidwError(lekSema,
+      "call expects " & $fnT.fnParams.len & " argument(s), got " &
+      $n.args.len, n.line, n.col)
+  for i, a in n.args:
+    let saveCtx2 = v.ctx
+    v.ctx = nil
+    visit(v, a)
+    v.ctx = saveCtx2
+    if a.typ == nil or not fits(a.typ, fnT.fnParams[i]):
+      let got = if a.typ == nil: "<untyped>" else: $a.typ
+      raise lidwError(lekSema,
+        "argument " & $(i+1) & " has type " & got &
+        ", expected " & $fnT.fnParams[i], a.line, a.col)
+  n.typ = fnT.fnRet
 
 proc runSema*(n: Node): Node =
   ## Run sema on n; types set in-place, n returned.

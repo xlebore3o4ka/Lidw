@@ -36,7 +36,8 @@ proc emitExpr(c: CodegenCtx, n: Node): LLVMValueRef =
     if slot == nil:
       raise newException(ValueError,
         "codegen: undefined variable: " & n.identName)
-    LLVMBuildLoad2(c.builder, c.i64, slot, n.identName & "_load")
+    let loadName = n.identName & "_load"
+    LLVMBuildLoad2(c.builder, c.i64, slot, loadName.cstring)
   else:
     raise newException(ValueError,
       "codegen: unsupported node: " & $n.kind)

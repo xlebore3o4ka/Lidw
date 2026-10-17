@@ -86,6 +86,7 @@ proc lexAll*(src: string): seq[Token] =
     of '(': l.adv(); result.add Token(kind: tkLParen,  line: startLine, col: startCol)
     of ')': l.adv(); result.add Token(kind: tkRParen,  line: startLine, col: startCol)
     of '=': l.adv(); result.add Token(kind: tkEquals,  line: startLine, col: startCol)
+    of ';': l.adv(); result.add Token(kind: tkSemicolon, line: startLine, col: startCol)
     of 'a'..'z', 'A'..'Z', '_': result.add l.lexWord()
     else:
       let cp = l.src.runeAt(l.pos)

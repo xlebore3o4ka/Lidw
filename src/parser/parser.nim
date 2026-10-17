@@ -53,7 +53,9 @@ proc parsePrimary(p: var Parser): Node =
     let lparen = t
     p.advance()
     var stmts: seq[Node] = @[]
-    while p.peek().kind notin {tkRParen, tkEOF}:
+    while true:
+      while p.peek().kind == tkSemicolon: p.advance()
+      if p.peek().kind in {tkRParen, tkEOF}: break
       stmts.add parseStmt(p)
     let closing = p.peek()
     if closing.kind != tkRParen:
@@ -138,7 +140,9 @@ proc parseStmt(p: var Parser): Node =
 proc parseProgram*(tokens: seq[Token]): Node =
   var p = Parser(tokens: tokens, pos: 0)
   var stmts: seq[Node] = @[]
-  while p.peek().kind != tkEOF:
+  while true:
+    while p.peek().kind == tkSemicolon: p.advance()
+    if p.peek().kind == tkEOF: break
     stmts.add parseStmt(p)
   if stmts.len > 0:
     result = Node(kind: nkBlock, stmts: stmts, line: stmts[0].line, col: stmts[0].col)

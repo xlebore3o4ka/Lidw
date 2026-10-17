@@ -15,6 +15,7 @@ type
     tkIdent      ## lowercase-initial word: variable, keyword, name
     tkType       ## uppercase-initial word: type name
     tkEquals     ## =
+    tkSemicolon  ## ; optional statement separator
     tkEOF        ## end of input
 
   Token* = object
@@ -40,4 +41,5 @@ proc `$`*(t: Token): string =
     of tkIdent:   "tkIdent(" & t.word & ")"
     of tkType:    "tkType(" & t.word & ")"
     of tkEquals:  "tkEquals"
+    of tkSemicolon: "tkSemicolon"
     of tkEOF:     "tkEOF"

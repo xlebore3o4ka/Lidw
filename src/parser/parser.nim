@@ -109,15 +109,23 @@ proc parseDecl(p: var Parser): Node =
     raise lidwError(lekParse,
       "expected identifier after type " & typeTok.word, nameTok.line, nameTok.col)
   p.advance()
+  # <NOTE>#22: '!' marks immutable, '$' marks mutable explicitly; both are
+  # optional postfixes on the name, before '='.
+  var mut = muMutable
+  if p.peek().kind == tkBang:
+    mut = muImmutable
+    p.advance()
+  elif p.peek().kind == tkDollar:
+    p.advance()
   if p.peek().kind == tkEquals:
     let eqTok = p.peek()
     p.advance()
     let iv = parseExpr(p, 0)
     result = Node(kind: nkDecl, declName: nameTok.word, declType: typeTok.word,
-                  declInit: iv, line: eqTok.line, col: eqTok.col)
+                  declMut: mut, declInit: iv, line: eqTok.line, col: eqTok.col)
   else:
     result = Node(kind: nkDecl, declName: nameTok.word, declType: typeTok.word,
-                  declInit: nil, line: nameTok.line, col: nameTok.col)
+                  declMut: mut, declInit: nil, line: nameTok.line, col: nameTok.col)
 
 proc parseAssign(p: var Parser): Node =
   let nameTok = p.peek()

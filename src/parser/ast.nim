@@ -11,6 +11,10 @@ type
   UnOp* = enum
     uoNeg
 
+  Mutability* = enum
+    muMutable
+    muImmutable
+
   NodeKind* = enum
     nkInt, nkFloat, nkUnary, nkBinOp
     nkBlock, nkDecl, nkIdent, nkAssign
@@ -36,6 +40,7 @@ type
     of nkDecl:
       declName*: string
       declType*: string
+      declMut*: Mutability
       declInit*: Node
     of nkIdent:
       identName*: string
@@ -82,11 +87,13 @@ proc render(n: Node, depth: int): string =
     else:
       pad & "block @" & $n.line & ":" & $n.col & ts & "\n" & parts.join("\n")
   of nkDecl:
+    let mutMark = if n.declMut == muImmutable: "!" else: ""
+    let head = "decl(" & n.declName & mutMark & ": " & n.declType & ") @" &
+      $n.line & ":" & $n.col & ts
     if n.declInit == nil:
-      pad & "decl(" & n.declName & ": " & n.declType & ") @" & $n.line & ":" & $n.col & ts
+      pad & head
     else:
-      pad & "decl(" & n.declName & ": " & n.declType & ") @" & $n.line & ":" & $n.col & ts & "\n" &
-        render(n.declInit, depth + 1)
+      pad & head & "\n" & render(n.declInit, depth + 1)
   of nkIdent:
     pad & "ident(" & n.identName & ") @" & $n.line & ":" & $n.col & ts
   of nkAssign:

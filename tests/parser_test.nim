@@ -1,7 +1,6 @@
 # Parser unit tests.
 
 import std/unittest
-import ../src/parser/tokens
 import ../src/parser/lexer
 import ../src/parser/ast
 import ../src/parser/parser
@@ -98,3 +97,26 @@ suite "parser":
   test "empty parens are parse error":
     check expectParse("()") == lekParse
     check expectParse("(;)") == lekParse
+
+  test "decl mutable by default":
+    let n = p("Int x = 10")
+    check n.stmts[0].declMut == muMutable
+
+  test "decl immutable via bang":
+    let n = p("Int x! = 10")
+    check n.stmts[0].kind == nkDecl
+    check n.stmts[0].declName == "x"
+    check n.stmts[0].declMut == muImmutable
+
+  test "decl mutable via dollar":
+    let n = p("Int x$ = 10")
+    check n.stmts[0].declMut == muMutable
+
+  test "immutable decl without init":
+    let n = p("Int x!")
+    check n.stmts[0].kind == nkDecl
+    check n.stmts[0].declInit == nil
+    check n.stmts[0].declMut == muImmutable
+
+  test "use-postfix is still parse error":
+    check expectParse("Int x = 10; x!") == lekParse

@@ -1,7 +1,6 @@
 # Semantic analyzer unit tests.
 
 import std/unittest
-import ../src/parser/tokens
 import ../src/parser/lexer
 import ../src/parser/ast
 import ../src/parser/parser

@@ -160,3 +160,45 @@ suite "sema":
     except LidwError as e:
       check e.kind == lekSema
       check "redeclaration of x" in e.msg
+
+  test "comparison produces Bool":
+    let n = sema("Bool b = 1 < 2")
+    check n.stmts[0].kind == nkDecl
+    check n.stmts[0].typ.kind == tyBool
+    check n.stmts[0].declInit.typ.kind == tyBool
+
+  test "iLit under Bool context stays iLit":
+    let n = sema("Bool b = 1")
+    check n.stmts[0].typ.kind == tyBool
+    check n.stmts[0].declInit.typ.kind == tyILit
+
+  test "Bool equality with iLit":
+    let n = sema("Bool b = 1 Bool c = b == 0")
+    check n.stmts[1].typ.kind == tyBool
+    check n.stmts[1].declInit.typ.kind == tyBool
+
+  test "Int variable ordering":
+    let n = sema("Int x = 5 Bool b = x < 10")
+    check n.stmts[1].typ.kind == tyBool
+    check n.stmts[1].declInit.typ.kind == tyBool
+
+  test "comparison result does not fit Int":
+    check expectSema("Int x = 1 < 2") == lekSema
+
+  test "ordering on Bool is error":
+    check expectSema("Bool b = 1 Int x = (b < 2)") == lekSema
+
+  test "mismatched equality Int and Bool":
+    check expectSema("Int x = 1 Bool b = 0 Bool c = (x == b)") == lekSema
+
+  test "Bool does not fit Int":
+    check expectSema("Bool b = 1 Int x = b") == lekSema
+
+  test "Int does not fit Bool":
+    check expectSema("Int x = 1 Bool b = x") == lekSema
+
+  test "arithmetic on Bool is error":
+    check expectSema("Bool b = 1 Bool c = b + 1") == lekSema
+
+  test "unary minus on Bool is error":
+    check expectSema("Bool b = 1 Int x = -b") == lekSema

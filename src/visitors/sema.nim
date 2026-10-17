@@ -81,9 +81,9 @@ proc foldInt(op: BinOp, a, b: int64, line, col: int): int64 =
     if a == low(int64) and b == -1: return 0
     a mod b
   of boEq, boNe, boLt, boLe, boGt, boGe:
-    # <TODO>#27: comparison folding — P4c
-    raise lidwError(lekSema,
-      "comparison " & opStr(op) & " not implemented yet", line, col)
+    # <NOTE>#27: comparisons are handled in visitBinOp before foldInt;
+    # reaching here means the dispatch above is broken.
+    raise newException(AssertionDefect, "foldInt: comparison op " & opStr(op))
 
 proc visitInt*(v: var SemaVisitor, n: Node) =
   # <NOTE>#11: literal keeps iLit under context; fits() is a check, not
@@ -117,15 +117,51 @@ proc visitUnary*(v: var SemaVisitor, n: Node) =
       n.typ = lt
   else:
     # <NOTE>#21: concrete operand; unary keeps its type, ctx is a check.
+    if n.operand.typ.kind notin {tyI64, tyILit}:
+      raise lidwError(lekSema,
+        "unary " & unopStr(n.unop) & " requires Int, got " & $n.operand.typ,
+        n.line, n.col)
     if v.ctx != nil and not fits(n.operand.typ, v.ctx):
       raise lidwError(lekSema,
         "operand of unary " & unopStr(n.unop) & " has type " & $n.operand.typ &
         ", expected " & $v.ctx, n.line, n.col)
     n.typ = n.operand.typ
 
+proc isComparison(o: BinOp): bool =
+  o in {boEq, boNe, boLt, boLe, boGt, boGe}
+
+proc isOrdering(o: BinOp): bool =
+  o in {boLt, boLe, boGt, boGe}
+
 proc visitBinOp*(v: var SemaVisitor, n: Node) =
   visit(v, n.left)
   visit(v, n.right)
+
+  if isComparison(n.op):
+    # <NOTE>#26: comparisons produce Bool. Equality accepts (Int, iLit)
+    # or (Bool, iLit); ordering accepts Int operands only. No value
+    # folding: we keep Bool without a literal payload.
+    let lk = n.left.typ.kind
+    let rk = n.right.typ.kind
+    let bothInt = lk in {tyI64, tyILit} and rk in {tyI64, tyILit}
+    if isOrdering(n.op):
+      if not bothInt:
+        raise lidwError(lekSema,
+          "operator " & opStr(n.op) & " requires Int operands, got " &
+          $n.left.typ & " and " & $n.right.typ, n.line, n.col)
+    else:
+      let eqOk = bothInt or
+                 (lk == tyBool and rk in {tyBool, tyILit}) or
+                 (rk == tyBool and lk in {tyBool, tyILit})
+      if not eqOk:
+        raise lidwError(lekSema,
+          "operator " & opStr(n.op) & " requires matching types, got " &
+          $n.left.typ & " and " & $n.right.typ, n.line, n.col)
+    n.typ = boolType()
+    if v.ctx != nil and not fits(n.typ, v.ctx):
+      raise lidwError(lekSema,
+        "comparison result Bool does not fit " & $v.ctx, n.line, n.col)
+    return
 
   let bothLit = n.left.typ.kind == tyILit and n.right.typ.kind == tyILit
 

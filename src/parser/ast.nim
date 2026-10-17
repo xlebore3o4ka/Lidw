@@ -3,6 +3,7 @@
 
 import std/strutils
 import ../types
+export Mutability
 
 type
   BinOp* = enum
@@ -11,10 +12,6 @@ type
 
   UnOp* = enum
     uoNeg
-
-  Mutability* = enum
-    muMutable
-    muImmutable
 
   NodeKind* = enum
     nkInt, nkFloat, nkUnary, nkBinOp

@@ -36,6 +36,26 @@ proc visitTypeName*(v: var SemaVisitor, n: Node)
 proc visitFnType*(v: var SemaVisitor, n: Node)
 proc visitParam*(v: var SemaVisitor, n: Node)
 
+proc visitTypeNode*(v: var SemaVisitor, n: Node): LidwType =
+  ## <NOTE>#80: resolve a type-expression AST to LidwType. Used by
+  ## visitDecl. nkTypeName -> concrete kind; nkFnType -> structural
+  ## function type. Anything else is a bug.
+  case n.kind
+  of nkTypeName: resolveTypeName(n.typeName, n.line, n.col)
+  of nkFnType:
+    let ret = visitTypeNode(v, n.fnRet)
+    var params: seq[LidwType] = @[]
+    var paramsMut: seq[LidwType] = @[]
+    for p in n.fnParams:
+      params.add visitTypeNode(v, p.paramType)
+      paramsMut.add nil
+    fnType(ret, params, paramsMut)
+  of nkParam:
+    visitTypeNode(v, n.paramType)
+  else:
+    raise newException(AssertionDefect,
+      "visitTypeNode: not a type node: " & $n.kind)
+
 # <NOTE>#54: iLit range per concrete int type. U64 upper is above int64
 # max; iLit carries int64, so any non-negative value fits U64.
 proc fitsIntLit(v: int64, k: TypeKind): bool =
@@ -336,7 +356,15 @@ proc visitBlock*(v: var SemaVisitor, n: Node) =
     n.typ = nulType()
 
 proc visitDecl*(v: var SemaVisitor, n: Node) =
-  let declT = resolveTypeName(n.declType, n.line, n.col)
+  let declT =
+    if n.declTypeNode != nil: visitTypeNode(v, n.declTypeNode)
+    else: resolveTypeName(n.declType, n.line, n.col)
+  let isFnDecl = declT.kind == tyFn
+  if isFnDecl:
+    # <TODO>#81: visit fn body in Fa.3b. For now register the symbol.
+    v.symbols.define(n.declName, declT, n.declMut, n.line, n.col)
+    n.typ = declT
+    return
   let saveCtx = v.ctx
   v.ctx = declT
   if n.declInit != nil:
@@ -427,19 +455,17 @@ proc visitCast*(v: var SemaVisitor, n: Node) =
       "cast to " & $n.typ & " does not fit " & $v.ctx, n.line, n.col)
 
 proc visitTypeName*(v: var SemaVisitor, n: Node) =
-  # <NOTE>#78: type nodes are resolved by the caller (visitDecl via
-  # resolveTypeName / visitType in Fa.3). Reaching here means a type
-  # node leaked into expression position.
+  # <NOTE>#78: type nodes are resolved via visitTypeNode by their parent
+  # (visitDecl / visitFnType). Reaching here means a type node leaked
+  # into expression position.
   raise lidwError(lekSema,
     "type name in expression position: " & n.typeName, n.line, n.col)
 
 proc visitFnType*(v: var SemaVisitor, n: Node) =
-  raise lidwError(lekSema, "function types not implemented yet (Fa.3)",
-                  n.line, n.col)
+  n.typ = visitTypeNode(v, n)
 
 proc visitParam*(v: var SemaVisitor, n: Node) =
-  raise lidwError(lekSema, "parameters not implemented yet (Fa.3)",
-                  n.line, n.col)
+  n.typ = visitTypeNode(v, n.paramType)
 
 proc runSema*(n: Node): Node =
   ## Run sema on n; types set in-place, n returned.

@@ -1,7 +1,12 @@
+import std/strutils
 # Type system for LIDW.
 # <NOTE>#6: iLit carries the literal value; coerces to i64 when needed.
 
 type
+  Mutability* = enum
+    muMutable
+    muImmutable
+
   TypeKind* = enum
     tyI8, tyU8
     tyI16, tyU16
@@ -10,6 +15,7 @@ type
     tyILit   ## untyped integer literal (value known, bitness unknown)
     tyBool   ## boolean
     tyNul    ## no value (statement position)
+    tyFn     ## function type
 
   LidwType* = ref object
     case kind*: TypeKind
@@ -17,6 +23,10 @@ type
     of tyILit: value*: int64
     of tyBool: discard
     of tyNul: discard
+    of tyFn:
+      fnRet*: LidwType
+      fnParams*: seq[LidwType]
+      fnParamsMut*: seq[Mutability]
 
 const IntKinds* = {tyI8, tyU8, tyI16, tyU16, tyI32, tyU32, tyI64, tyU64}
 
@@ -41,6 +51,14 @@ proc boolType*(): LidwType =
 
 proc nulType*(): LidwType =
   LidwType(kind: tyNul)
+
+proc fnType*(ret: LidwType, params, paramsMut: seq[LidwType]): LidwType =
+  ## <NOTE>#79: fnParamsMut is a placeholder for Fa.7 (mutable params).
+  ## Kept parallel to fnParams so a future refactor doesn't churn the
+  ## struct.
+  discard paramsMut
+  LidwType(kind: tyFn, fnRet: ret, fnParams: params,
+           fnParamsMut: newSeq[Mutability](params.len))
 
 proc isSigned*(t: LidwType): bool =
   case t.kind
@@ -73,3 +91,8 @@ proc `$`*(t: LidwType): string =
   of tyILit: "iLit(" & $t.value & ")"
   of tyBool: "Bool"
   of tyNul: "nul"
+  of tyFn:
+    var parts: seq[string] = @[]
+    for p in t.fnParams:
+      parts.add $p
+    $t.fnRet & "(" & parts.join(", ") & ")"

@@ -415,9 +415,6 @@ suite "sema":
   test "arithmetic on Bool still rejected":
     check expectSema("Bool b = 1 Bool c = b + 1") == lekSema
 
-  test "fn type in decl is not implemented in sema":
-    check expectSema("Int(Int a) f = a + 1") == lekSema
-
   test "cast Int to Int":
     let n = sema("Int x = 5 Int y = x as Int")
     check n.stmts[1].declInit.kind == nkCast

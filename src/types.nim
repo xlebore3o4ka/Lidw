@@ -52,13 +52,11 @@ proc boolType*(): LidwType =
 proc nulType*(): LidwType =
   LidwType(kind: tyNul)
 
-proc fnType*(ret: LidwType, params, paramsMut: seq[LidwType]): LidwType =
-  ## <NOTE>#79: fnParamsMut is a placeholder for Fa.7 (mutable params).
-  ## Kept parallel to fnParams so a future refactor doesn't churn the
-  ## struct.
-  discard paramsMut
+proc fnType*(ret: LidwType, params: seq[LidwType],
+              paramsMut: seq[Mutability]): LidwType =
+  doAssert params.len == paramsMut.len, "fnType: paramsMut length mismatch"
   LidwType(kind: tyFn, fnRet: ret, fnParams: params,
-           fnParamsMut: newSeq[Mutability](params.len))
+           fnParamsMut: paramsMut)
 
 proc isSigned*(t: LidwType): bool =
   case t.kind

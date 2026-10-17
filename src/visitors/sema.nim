@@ -47,10 +47,10 @@ proc visitTypeNode*(v: var SemaVisitor, n: Node): LidwType =
   of nkFnType:
     let ret = visitTypeNode(v, n.fnRet)
     var params: seq[LidwType] = @[]
-    var paramsMut: seq[LidwType] = @[]
+    var paramsMut: seq[Mutability] = @[]
     for p in n.fnParams:
       params.add visitTypeNode(v, p.paramType)
-      paramsMut.add nil
+      paramsMut.add p.paramMut
     fnType(ret, params, paramsMut)
   of nkParam:
     visitTypeNode(v, n.paramType)
@@ -395,6 +395,13 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
       raise lidwError(lekSema,
         "Nul-returning functions not implemented yet",
         n.line, n.col)
+    # <NOTE>#94: a mutable param must have a name (nothing to mutate
+    # otherwise). Parameters are bound with their declared mutability.
+    for p in n.declTypeNode.fnParams:
+      if p.paramMut == muMutable and p.paramName.len == 0:
+        raise lidwError(lekSema,
+          "mutable parameter must be named",
+          p.line, p.col)
     discard v.symbols.open()
     let saveCtx = v.ctx
     let saveTop = v.atTopLevel
@@ -402,7 +409,7 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
     for i, p in n.declTypeNode.fnParams:
       if p.paramName.len > 0:
         v.symbols.define(p.paramName, declT.fnParams[i],
-                         muImmutable, p.line, p.col)
+                         p.paramMut, p.line, p.col)
     v.ctx = retT
     visit(v, n.declInit)
     if n.declInit.typ == nil or not fits(n.declInit.typ, retT):
@@ -534,6 +541,11 @@ proc visitCall*(v: var SemaVisitor, n: Node) =
     raise lidwError(lekSema,
       "call expects " & $fnT.fnParams.len & " argument(s), got " &
       $n.args.len, n.line, n.col)
+  # <NOTE>#95: mutable arg means "ident bound to a mutable symbol" (or,
+  # in the future, a call whose return type is mutable). Literals,
+  # arithmetic, comparisons, casts, if-expressions, blocks — all
+  # immutable rvalues. No `!` on the call site; mutability of the
+  # symbol is the whole signal.
   for i, a in n.args:
     let saveCtx2 = v.ctx
     v.ctx = nil
@@ -544,6 +556,20 @@ proc visitCall*(v: var SemaVisitor, n: Node) =
       raise lidwError(lekSema,
         "argument " & $(i+1) & " has type " & got &
         ", expected " & $fnT.fnParams[i], a.line, a.col)
+    if fnT.fnParamsMut[i] == muMutable:
+      if a.kind != nkIdent:
+        raise lidwError(lekSema,
+          "argument " & $(i+1) & " must be mutable (ident bound to " &
+          "a mutable variable), got a value expression",
+          a.line, a.col)
+      let sym = v.symbols.lookup(a.identName)
+      if sym.typ == nil:
+        raise lidwError(lekSema,
+          "undefined variable: " & a.identName, a.line, a.col)
+      if sym.mut != muMutable:
+        raise lidwError(lekSema,
+          "argument " & $(i+1) & " must be mutable, but " &
+          a.identName & " is immutable", a.line, a.col)
   n.typ = fnT.fnRet
 
 proc runSema*(n: Node): Node =

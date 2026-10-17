@@ -9,6 +9,7 @@ type
   CodegenCtx = object
     ctx: LLVMContextRef
     builder: LLVMBuilderRef
+    mainFn: LLVMValueRef
     i64: LLVMTypeRef
     i1: LLVMTypeRef
     vars: Table[string, LLVMValueRef]   ## name -> alloca
@@ -113,6 +114,46 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     nil
   of nkInt, nkIdent, nkUnary, nkBinOp:
     emitExpr(c, n)
+  of nkBlock:
+    # <NOTE>#45: codegen has no scope model yet; block stmts are emitted
+    # flat. Vars declared in a block overwrite outer names in c.vars
+    # (shadowing not modelled in codegen; sema already checked validity).
+    var lastVal: LLVMValueRef = nil
+    for s in n.stmts:
+      let v = emitStmt(c, s)
+      if v != nil: lastVal = v
+    lastVal
+  of nkIf:
+    # <NOTE>#44: statement-position if — branches are statements, result
+    # discarded. Value-if (in decl init) is 5d (phi).
+    if n.typ != nil and n.typ.kind != tyNul:
+      raise newException(ValueError,
+        "codegen: if as value not implemented yet (5d)")
+    var cond = emitExpr(c, n.ifCond)
+    let condIsBool = n.ifCond.typ != nil and n.ifCond.typ.kind == tyBool
+    if not condIsBool:
+      cond = toBool(c, cond)
+    let thenBB = LLVMCreateBasicBlockInContext(c.ctx, "then")
+    let mergeBB = LLVMCreateBasicBlockInContext(c.ctx, "merge")
+    var elseBB: LLVMBasicBlockRef
+    if n.ifElse != nil:
+      elseBB = LLVMCreateBasicBlockInContext(c.ctx, "else")
+    else:
+      elseBB = mergeBB
+    LLVMAppendExistingBasicBlock(c.mainFn, thenBB)
+    if n.ifElse != nil:
+      LLVMAppendExistingBasicBlock(c.mainFn, elseBB)
+    LLVMAppendExistingBasicBlock(c.mainFn, mergeBB)
+    discard LLVMBuildCondBr(c.builder, cond, thenBB, elseBB)
+    LLVMPositionBuilderAtEnd(c.builder, thenBB)
+    discard emitStmt(c, n.ifThen)
+    discard LLVMBuildBr(c.builder, mergeBB)
+    if n.ifElse != nil:
+      LLVMPositionBuilderAtEnd(c.builder, elseBB)
+      discard emitStmt(c, n.ifElse)
+      discard LLVMBuildBr(c.builder, mergeBB)
+    LLVMPositionBuilderAtEnd(c.builder, mergeBB)
+    nil
   else:
     raise newException(ValueError,
       "codegen: unsupported statement: " & $n.kind)
@@ -136,7 +177,8 @@ proc emitModule*(program: Node): string =
   let entry = LLVMAppendBasicBlockInContext(ctx, mainFn, "entry")
   LLVMPositionBuilderAtEnd(builder, entry)
 
-  var c = CodegenCtx(ctx: ctx, builder: builder, i64: i64, i1: i1,
+  var c = CodegenCtx(ctx: ctx, builder: builder, mainFn: mainFn,
+                     i64: i64, i1: i1,
                      vars: initTable[string, LLVMValueRef](),
                      varTypes: initTable[string, LLVMTypeRef]())
 

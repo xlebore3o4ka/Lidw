@@ -131,6 +131,42 @@ suite "llvm-c bindings":
     let ir = emitModule(p)
     check "store i1 false" in ir
 
+  test "emitModule if statement has basic blocks":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkInt, intVal: 0)),
+      Node(kind: nkIf,
+        ifCond: Node(kind: nkInt, intVal: 1),
+        ifThen: Node(kind: nkAssign, assignName: "x",
+                     assignValue: Node(kind: nkInt, intVal: 5)),
+        ifElse: Node(kind: nkAssign, assignName: "x",
+                     assignValue: Node(kind: nkInt, intVal: 7)))
+    ])
+    let ir = emitModule(p)
+    check "br i1" in ir
+    check "br label" in ir
+    check "then:" in ir
+    check "else:" in ir
+    check "merge:" in ir
+    check "store i64 5" in ir
+    check "store i64 7" in ir
+
+  test "emitModule if without else jumps to merge":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkInt, intVal: 0)),
+      Node(kind: nkIf,
+        ifCond: Node(kind: nkInt, intVal: 1),
+        ifThen: Node(kind: nkAssign, assignName: "x",
+                     assignValue: Node(kind: nkInt, intVal: 5)),
+        ifElse: nil)
+    ])
+    let ir = emitModule(p)
+    check "br i1" in ir
+    check "then:" in ir
+    check "merge:" in ir
+    check "else:" notin ir
+
   test "main returns 42, verifies":
     let ctx = LLVMContextCreate()
     let llmod = LLVMModuleCreateWithNameInContext("lidw_test2", ctx)

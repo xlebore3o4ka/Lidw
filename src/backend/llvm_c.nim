@@ -119,6 +119,18 @@ proc LLVMBuildZExt*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
                     DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildZExt".}
 
+# --- control flow ---
+proc LLVMCreateBasicBlockInContext*(C: LLVMContextRef, Name: cstring): LLVMBasicBlockRef
+  {.cdecl, importc: "LLVMCreateBasicBlockInContext".}
+proc LLVMAppendExistingBasicBlock*(Fn: LLVMValueRef, BB: LLVMBasicBlockRef)
+  {.cdecl, importc: "LLVMAppendExistingBasicBlock".}
+proc LLVMBuildBr*(Builder: LLVMBuilderRef,
+                  Dest: LLVMBasicBlockRef): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildBr".}
+proc LLVMBuildCondBr*(Builder: LLVMBuilderRef, If: LLVMValueRef,
+                      Then, Else: LLVMBasicBlockRef): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildCondBr".}
+
 # --- verification ---
 proc LLVMVerifyModule*(M: LLVMModuleRef,
                        Action: LLVMVerifierFailureAction,

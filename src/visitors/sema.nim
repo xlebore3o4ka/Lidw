@@ -203,14 +203,22 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
     n.typ = unified
 
 proc visitBlock*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#19: block without 'is' has no value. Under ctx that is an
+  # error ("block has no value"); outside ctx it is a statement (nul).
+  # 'is' inside a block is handled in visitIs (C2e).
   discard v.symbols.open()
-  for s in n.stmts:
-    visit(v, s)
-  v.symbols.close()
-  # <NOTE>#19: multi-stmt block in value position yields default of ctx.
-  # Single-stmt blocks are unwrapped by the parser and never reach here.
-  if n.stmts.len > 1 and v.ctx != nil:
-    n.typ = v.ctx
+  try:
+    let saveCtx = v.ctx
+    v.ctx = nil
+    for s in n.stmts:
+      visit(v, s)
+    v.ctx = saveCtx
+  finally:
+    v.symbols.close()
+  if v.ctx != nil:
+    raise lidwError(lekSema,
+      "block has no value, expected " & $v.ctx, n.line, n.col)
+  n.typ = nulType()
 
 proc visitDecl*(v: var SemaVisitor, n: Node) =
   let declT = resolveTypeName(n.declType, n.line, n.col)
@@ -259,8 +267,10 @@ proc visitIs*(v: var SemaVisitor, n: Node) =
   # <TODO>#31: C2e — yield from nearest block
   raise lidwError(lekSema, "is: not implemented yet", n.line, n.col)
 
-proc runSema*(n: Node, ctx: LidwType = nil): Node =
-  ## Run sema on n with the given context; types set in-place, n returned.
-  var v = newSemaVisitor(ctx)
+proc runSema*(n: Node): Node =
+  ## Run sema on n; types set in-place, n returned.
+  # <NOTE>#32: no root context — program root is a statement block.
+  # Context enters only via declarations (Int x = ...).
+  var v = newSemaVisitor()
   visit(v, n)
   n

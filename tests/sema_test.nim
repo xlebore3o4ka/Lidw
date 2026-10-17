@@ -9,8 +9,8 @@ import ../src/types
 import ../src/visitors/sema
 import ../src/errors
 
-proc sema(src: string, ctx: LidwType = nil): Node =
-  runSema(parseProgram(lexAll(src)), ctx)
+proc sema(src: string): Node =
+  runSema(parseProgram(lexAll(src)))
 
 proc expectSema(src: string): LidwErrorKind =
   try:
@@ -27,11 +27,12 @@ suite "sema":
     check e.typ.kind == tyILit
     check e.typ.value == 14
 
-  test "literal under i64 ctx stays iLit":
-    let n = sema("10 + 4", i64Type())
-    let e = n.stmts[0]
-    check e.typ.kind == tyILit
-    check e.typ.value == 14
+  test "literal fold under decl ctx stays iLit":
+    let n = sema("Int x = 10 + 4")
+    let d = n.stmts[0]
+    check d.typ.kind == tyI64
+    check d.declInit.typ.kind == tyILit
+    check d.declInit.typ.value == 14
 
   test "decl init keeps iLit, decl gets i64":
     let n = sema("Int x = 10")
@@ -98,12 +99,28 @@ suite "sema":
     # y bound inside block must not leak
     check expectSema("(Int y = 10; y) Int z = y") == lekSema
 
-  test "block in value position takes default of ctx":
-    let n = sema("Int x = (Int y = 10; 5)")
-    let d = n.stmts[0]
-    check d.typ.kind == tyI64
-    check d.declInit.kind == nkBlock
-    check d.declInit.typ.kind == tyI64
+  test "block in value position is error without is":
+    try:
+      discard sema("Int x = (Int y = 10; 5)")
+      check false
+    except LidwError as e:
+      check e.kind == lekSema
+      check "block has no value" in e.msg
+
+  test "block without ctx is nul":
+    let n = sema("(1 2)")
+    check n.stmts[0].kind == nkBlock
+    check n.stmts[0].typ.kind == tyNul
+
+  test "root program is nul":
+    let n = sema("Int x = 10")
+    check n.typ.kind == tyNul
+
+  test "block nul does not unify with iLit":
+    check expectSema("(1 2) + 1") == lekSema
+
+  test "block nul does not fit i64":
+    check expectSema("Int x = (1 2)") == lekSema
 
   test "redefinition in same scope":
     try:

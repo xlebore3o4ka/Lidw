@@ -8,14 +8,14 @@ build actually understands.
 
 | Aspect             | Parser | Sema  | Codegen |
 |--------------------|:------:|:-----:|:-------:|
-| Arithmetic         |   ok   |  ok   |   —     |
-| Comparisons        |   ok   |  ok   |   —     |
-| Declarations       |   ok   |  ok   |   —     |
-| Assignment         |   ok   |  ok   |   —     |
-| Mutability         |   ok   |  ok   |   —     |
-| Blocks & scope     |   ok   |  ok   |   —     |
-| `if`/`elif`/`else` |   ok   |  ok   |   —     |
-| `is`               |   ok   |  ok   |   —     |
+| Arithmetic         |   ok   |  ok   |  partial|
+| Comparisons        |   ok   |  ok   |  partial|
+| Declarations       |   ok   |  ok   |  partial|
+| Assignment         |   ok   |  ok   |  partial|
+| Mutability         |   ok   |  ok   |  partial|
+| Blocks & scope     |   ok   |  ok   |  partial|
+| `if`/`elif`/`else` |   ok   |  ok   |  partial|
+| `is`               |   ok   |  ok   |  partial|
 | Functions          |   —    |  —    |   —     |
 | Comments           |   —    |  —    |   —     |
 | Strings            |   —    |  —    |   —     |
@@ -23,7 +23,10 @@ build actually understands.
 
 Parser *ok*: `lidw ast '<src>'` builds a tree.
 Sema *ok*: `lidw check '<src>'` assigns types and accepts or rejects
-with `lekSema`. `—`: not implemented at all.
+with `lekSema`.
+Codegen *partial*: `lidw build '<src>'` emits LLVM IR that compiles
+and runs, but some semantics are temporary or missing (see
+[codegen.md](codegen.md)).
 
 ## Documents
 
@@ -32,6 +35,7 @@ with `lekSema`. `—`: not implemented at all.
 - [declarations.md](declarations.md) — variables, mutability
 - [expressions.md](expressions.md) — operators, if, is
 - [blocks.md](blocks.md) — grouping, blocks, scope
+- [codegen.md](codegen.md) — LLVM IR emission
 - [errors.md](errors.md) — error kinds and messages
 - [planned.md](planned.md) — not started
 
@@ -41,5 +45,6 @@ with `lekSema`. `—`: not implemented at all.
 lidw parse '<src>'   # token stream with positions
 lidw ast   '<src>'   # AST (no types)
 lidw check '<src>'   # typed AST (sema)
+lidw build '<src>'   # LLVM IR text (sema + codegen)
 lidw --version       # version from VERSION file
 ```

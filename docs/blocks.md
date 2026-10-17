@@ -84,3 +84,12 @@ is `Nul`. Differences from a block:
 - The root scope holds top-level declarations, closed at program end.
 
 Declarations inside execute in order; no `main` function.
+
+## Codegen scope
+
+The codegen mirrors the sema scope model with a stack of name
+tables. A block opens a new table. A declaration shadows an outer
+name by creating a fresh `alloca`; after the block closes, the
+outer alloca is visible again. LLVM auto-renames duplicate alloca
+names in printed IR (`%x`, `%x1`, `%x2`). See
+[codegen.md](codegen.md).

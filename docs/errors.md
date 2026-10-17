@@ -67,3 +67,21 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
   `b` is Bool.
 - `integer overflow: <a> <op> <b>` — literal folding overflow.
 - `division by zero` — literal folding.
+
+## Internal errors
+
+These are not `LidwError`. They indicate bugs in the compiler
+itself, and print as `internal error: <msg>` with exit code 2.
+
+- `codegen: unsupported node: <kind>` — codegen encountered an
+  AST node it does not handle yet (e.g. `nkFn` after a future
+  feature is added to the parser).
+- `codegen: unsupported binop: <op>` — sema passed an operator
+  codegen does not know.
+- `codegen: undefined variable: <name>` — a name survived sema
+  but is not in the codegen symbol table. Should be unreachable.
+- `codegen: value block without is` — value-block with no `is`.
+  Sema should have caught this.
+- `LLVM verify failed: <msg>` — LLVM's own verifier rejected the
+  module. Indicates a codegen bug; the message names the malformed
+  construct.

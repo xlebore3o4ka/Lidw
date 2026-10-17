@@ -82,7 +82,9 @@ without a stored value. Codegen (not implemented) will compute it.
 ## `if` / `elif` / `else`
 
 `if` is an expression. It can appear as a statement or as the value
-of a declaration.
+of a declaration. A branch without parentheses is exactly one
+statement; a multi-statement branch must be an explicit `( ... )`
+block.
 
 ```
 if cond stmt
@@ -124,6 +126,10 @@ Int x = if c; (is 1); else; (is 2)     # ok
 Int x = if c; is 1; else; is 2         # sema error: is outside block
 ```
 
+**Codegen.** Statement `if` emits `br i1` into `then`/`else`/`merge`
+blocks. Value `if` additionally emits a `phi` in `merge`. See
+[codegen.md](codegen.md).
+
 ## `is`
 
 `is expr` yields `expr` from its innermost enclosing block and
@@ -141,6 +147,10 @@ Int x = (Int y = 10; is y)         # x = y
   after is`.
 - `(is expr)` is *always* parsed as a block, so `is` has a block to
   yield from.
+
+**Codegen.** A value-block emits its statements in a new scope
+(names don't collide with outer block) and returns the value of
+`is`. See [codegen.md](codegen.md).
 
 ## Grouping
 

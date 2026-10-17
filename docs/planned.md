@@ -28,18 +28,21 @@ Layers to implement:
 - Forward references: not yet decided (declare-before-use like C,
   or multi-pass).
 
-## Codegen
+## Codegen follow-ups
 
-No compilation target yet; everything is frontend. When codegen
-exists it will handle:
+See [codegen.md](codegen.md) for what currently works. Follow-ups
+not yet started:
 
-- Default values (`Int` → 0, `Bool` → false) for uninitialized
-  declarations.
-- Comparison evaluation (`1 < 2` → true at runtime; currently a
-  `Bool` node without a value).
-- Block yields via `is` (currently typed, not evaluated).
-- `if` without `else` fills the missing branch with default of
-  `ctx`.
+- **Overflow checks.** `add/sub/mul` currently wrap silently at
+  runtime. Planned: LLVM `sadd.with.overflow` intrinsics and a
+  `panic`-on-overflow path.
+- **Division by zero.** Runtime `x/0` is LLVM UB today. Planned:
+  compare against 0 and panic.
+- **`print`.** Needed to replace the temporary "`main` returns the
+  last value" scaffold (TODO#39) with real program semantics.
+- **Alloca placement.** Alloca goes in the current block. Once
+  loops exist this must move to the function entry block
+  (TODO#41).
 
 ## Comments
 

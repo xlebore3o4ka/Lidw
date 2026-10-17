@@ -35,6 +35,7 @@ proc visitCast*(v: var SemaVisitor, n: Node)
 proc visitTypeName*(v: var SemaVisitor, n: Node)
 proc visitFnType*(v: var SemaVisitor, n: Node)
 proc visitParam*(v: var SemaVisitor, n: Node)
+proc visitCall*(v: var SemaVisitor, n: Node)
 
 proc visitTypeNode*(v: var SemaVisitor, n: Node): LidwType =
   ## <NOTE>#80: resolve a type-expression AST to LidwType. Used by
@@ -491,6 +492,10 @@ proc visitFnType*(v: var SemaVisitor, n: Node) =
 
 proc visitParam*(v: var SemaVisitor, n: Node) =
   n.typ = visitTypeNode(v, n.paramType)
+
+proc visitCall*(v: var SemaVisitor, n: Node) =
+  raise lidwError(lekSema, "call: not implemented yet (Fc)",
+                  n.line, n.col)
 
 proc runSema*(n: Node): Node =
   ## Run sema on n; types set in-place, n returned.

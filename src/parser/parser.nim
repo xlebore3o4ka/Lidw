@@ -87,6 +87,13 @@ proc parsePrimary(p: var Parser): Node =
   else:
     raise lidwError(lekParse, "unexpected token: " & $t, t.line, t.col)
 
+proc parseAsPostfix(p: var Parser): Node
+proc parseCall(p: var Parser): Node
+
+# <NOTE>#86: precedence, loosest to tightest:
+#   binary (in parseExpr loop) < as < unary < call < primary.
+# `-1 as U8` is `(-1) as U8`, `-f(1)` is `-(f(1))`,
+# `f(1) as U8` is `(f(1)) as U8`.
 proc parseUnary(p: var Parser): Node =
   let t = p.peek()
   if t.kind == tkMinus:
@@ -95,10 +102,42 @@ proc parseUnary(p: var Parser): Node =
     result = Node(kind: nkUnary, unop: uoNeg, operand: operand,
                   line: t.line, col: t.col)
   else:
-    result = parsePrimary(p)
+    result = parseCall(p)
 
-# <NOTE>#62: `as` binds tighter than binary ops, looser than unary,
-# like in Rust: `-x as U8` = `(-x) as U8`, `2 * 5 as U8` = `2 * (5 as U8)`.
+# <NOTE>#85: call is the tightest postfix. `(f)(1)` calls a grouped
+# ident. <NOTE>#87: a call only attaches when the callee is callable
+# (ident, call, cast). This keeps `if 1 (1 2) else 0` parsing as
+# "cond = 1, then = block (1 2)" rather than trying to call `1`.
+proc isCallable(n: Node): bool =
+  n.kind in {nkIdent, nkCall, nkCast}
+
+proc parseCall(p: var Parser): Node =
+  result = parsePrimary(p)
+  while p.peek().kind == tkLParen and isCallable(result):
+    let lpTok = p.peek()
+    let savePos = p.pos
+    p.advance()
+    var args: seq[Node] = @[]
+    var ok = true
+    while true:
+      if p.peek().kind == tkRParen: break
+      args.add parseExpr(p, 0)
+      if p.peek().kind == tkComma:
+        p.advance()
+        continue
+      break
+    # <NOTE>#88: if '(' did not close as a call, rewind and let the
+    # caller parse '(' as a block/grouping. This keeps `if c (1 2)`
+    # meaning "cond=c, then=block(1,2)" instead of a malformed call.
+    if p.peek().kind != tkRParen:
+      p.pos = savePos
+      ok = false
+    if not ok: break
+    p.advance()
+    result = Node(kind: nkCall, callee: result, args: args,
+                  line: lpTok.line, col: lpTok.col)
+
+# <NOTE>#62: `as` is above binary, below unary. Left-associative chain.
 proc parseAsPostfix(p: var Parser): Node =
   result = parseUnary(p)
   while p.peek().kind == tkAs:

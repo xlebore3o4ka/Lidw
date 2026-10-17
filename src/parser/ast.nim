@@ -18,6 +18,7 @@ type
     nkBlock, nkProgram, nkDecl, nkIdent, nkAssign
     nkIf, nkIs, nkCast
     nkTypeName, nkFnType, nkParam
+    nkCall
 
   Node* = ref object
     line*: int
@@ -65,6 +66,9 @@ type
       paramType*: Node
       paramName*: string        ## "" for unnamed parameter
       paramMut*: Mutability
+    of nkCall:
+      callee*: Node
+      args*: seq[Node]
 
 proc opStr*(o: BinOp): string =
   case o
@@ -171,5 +175,12 @@ proc render(n: Node, depth: int): string =
     let nameS = if n.paramName.len > 0: n.paramName & mutMark else: "_"
     pad & "param(" & nameS & ") @" & $n.line & ":" & $n.col & "\n" &
       render(n.paramType, depth + 1)
+  of nkCall:
+    var parts: seq[string] = @[]
+    parts.add pad & "call @" & $n.line & ":" & $n.col & ts
+    parts.add pad & "  callee:" & "\n" & render(n.callee, depth + 2)
+    for a in n.args:
+      parts.add pad & "  arg:" & "\n" & render(a, depth + 2)
+    parts.join("\n")
 
 proc `$`*(n: Node): string = render(n, 0)

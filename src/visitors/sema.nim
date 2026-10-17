@@ -395,12 +395,15 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
       raise lidwError(lekSema,
         "Nul-returning functions not implemented yet",
         n.line, n.col)
-    # <NOTE>#94: a mutable param must have a name (nothing to mutate
-    # otherwise). Parameters are bound with their declared mutability.
+    # <NOTE>#94: every parameter of a fn decl must have a name. The
+    # parser accepts unnamed types so fn types are flexible in type
+    # position; the decl site rejects them because a body cannot use
+    # an unnamed parameter, and a caller still has to pass it.
+    # <NOTE>#100: wildcard `_` will replace this rule when it lands.
     for p in n.declTypeNode.fnParams:
-      if p.paramMut == muMutable and p.paramName.len == 0:
+      if p.paramName.len == 0:
         raise lidwError(lekSema,
-          "mutable parameter must be named",
+          "parameter must be named (use `Int()` for no parameters)",
           p.line, p.col)
     discard v.symbols.open()
     let saveCtx = v.ctx

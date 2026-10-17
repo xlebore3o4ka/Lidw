@@ -56,8 +56,9 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
 - `function declaration requires a body: <name>` — `Int(Int a) f`
   without `=`.
 - `Nul-returning functions not implemented yet` — `Nul` return type.
-- `mutable parameter must be named` — `Int a$` is fine, unnamed
-  mutable is not.
+- `parameter must be named (use `Int()` for no parameters)` — a
+  function declaration has an unnamed parameter. Use a name, or drop
+  the parameter entirely for zero-arg functions.
 - `body of <name> has type <got>, expected <type>` — body value does
   not fit the return type.
 

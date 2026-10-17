@@ -29,14 +29,18 @@ a block `( ... )` a function declaration is a sema error.
   error.
 - `Int a$` — mutable parameter. Caller's variable can be modified.
 
-Unnamed parameters are allowed and behave like immutable locals that
-the body cannot reference:
+Every parameter of a function declaration must have a name. The
+parser accepts unnamed types in type position (so `Int(Int)` is a
+valid type expression), but the declaration site rejects them:
 
 ```
-Int(Int) f = 1        -- no usable parameter
+Int(Int a) f = a + 1   -- ok
+Int(Int) f = 1         -- sema error: parameter must be named
+Int() f = 1            -- ok, function with zero parameters
 ```
 
-A mutable parameter must have a name (nothing to mutate otherwise).
+For a function that takes no arguments, use `Int()`. A wildcard
+parameter (`_`) for explicitly ignored arguments is planned.
 
 ## Calling
 

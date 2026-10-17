@@ -215,14 +215,34 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
         let rhs = emitOperand(c, n.right, targetKind)
         LLVMBuildICmp(c.builder, cmpPredicate(n.op, targetKind), lhs, rhs, "cmp")
   of nkCast:
-    # <NOTE>#61: same-width passthrough only in 7c. Trunc/zext/sext in 7d.
+    # <NOTE>#76: cast dispatch on (source kind, target kind). iLit is
+    # folded at the target width, no IR instruction emitted. Concrete
+    # Int<->Int uses coerceInt (trunc/sext/zext by source signedness).
+    # Int<->Bool uses icmp-ne-zero / zext.
+    doAssert n.typ != nil, "codegen: cast without sema type"
+    let srcKind = nodeKindOr(n.castExpr, tyI64)
+    let targetKind = n.typ.kind
+    if srcKind == tyILit:
+      let v = n.castExpr.typ.value
+      if targetKind == tyBool:
+        return LLVMConstInt(c.i1, culonglong(if v != 0: 1 else: 0), 0)
+      # Int target: emit at target width.
+      return LLVMConstInt(llvmIntType(c, targetKind),
+                          cast[culonglong](v), 0)
     let v = emitExpr(c, n.castExpr)
-    if n.castExpr.typ.kind == n.typ.kind:
+    if srcKind == tyBool and targetKind == tyBool:
       return v
-    if n.castExpr.typ.kind == tyILit and n.typ.kind == tyI64:
-      return v
-    raise newException(ValueError,
-      "codegen: width-changing cast not supported yet (7d)")
+    if srcKind == tyBool:
+      # Bool -> Int: zext i1 to iN.
+      let toTy = llvmIntType(c, targetKind)
+      return LLVMBuildZExt(c.builder, v, toTy, "bool_zext")
+    if targetKind == tyBool:
+      # Int -> Bool: compare to zero, produces i1.
+      let srcTy = llvmIntType(c, srcKind)
+      return LLVMBuildICmp(c.builder, LLVMIntNE, v,
+                           LLVMConstInt(srcTy, 0, 0), "int_to_bool")
+    # Int -> Int.
+    coerceInt(c, v, srcKind, targetKind)
   of nkIdent:
     let slot = c.lookupVar(n.identName)
     if slot == nil:

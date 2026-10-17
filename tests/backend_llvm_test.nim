@@ -136,9 +136,7 @@ suite "llvm-c bindings":
     let ir = emitModule(p)
     check "load i64" in ir
 
-  test "emitModule width-changing cast rejected":
-    # Bool decl: i1 alloca is supported; the cast i64 -> i1 hits
-    # the width-changing-cast path in 7c.
+  test "emitModule cast Int to Bool":
     let p = Node(kind: nkProgram, stmts: @[
       Node(kind: nkDecl, declName: "x", declType: "Int",
            declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5))),
@@ -146,11 +144,28 @@ suite "llvm-c bindings":
            declInit: Node(kind: nkCast, typ: boolType(), castTarget: "Bool",
              castExpr: Node(kind: nkIdent, identName: "x", typ: i64Type())))
     ])
-    try:
-      discard emitModule(p)
-      check false
-    except ValueError as e:
-      check "width-changing cast" in e.msg
+    let ir = emitModule(p)
+    check "icmp ne i64" in ir
+
+  test "emitModule cast iLit to U8 emits at width":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "u", declType: "U8",
+           declInit: Node(kind: nkCast, typ: u8Type(), castTarget: "U8",
+             castExpr: Node(kind: nkInt, intVal: 300, typ: iLitType(300))))
+    ])
+    let ir = emitModule(p)
+    check "store i8" in ir
+
+  test "emitModule cast Bool to Int":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "b", declType: "Bool",
+           declInit: Node(kind: nkInt, intVal: 1, typ: iLitType(1))),
+      Node(kind: nkDecl, declName: "x", declType: "Int",
+           declInit: Node(kind: nkCast, typ: i64Type(), castTarget: "Int",
+             castExpr: Node(kind: nkIdent, identName: "b", typ: boolType())))
+    ])
+    let ir = emitModule(p)
+    check "zext i1" in ir
 
   test "emitModule narrow decl allocates i8":
     let p = Node(kind: nkProgram, stmts: @[

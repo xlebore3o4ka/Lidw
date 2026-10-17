@@ -12,6 +12,7 @@ type
   LLVMBuilderRef* = ptr object
   LLVMValueRef*   = ptr object
   LLVMTypeRef*    = ptr object
+  LLVMBasicBlockRef* = ptr object
 
   LLVMBool* = cint
 
@@ -38,3 +39,39 @@ proc LLVMCreateBuilderInContext*(C: LLVMContextRef): LLVMBuilderRef
   {.cdecl, importc: "LLVMCreateBuilderInContext".}
 proc LLVMDisposeBuilder*(Builder: LLVMBuilderRef)
   {.cdecl, importc: "LLVMDisposeBuilder".}
+
+# --- types ---
+proc LLVMInt64TypeInContext*(C: LLVMContextRef): LLVMTypeRef
+  {.cdecl, importc: "LLVMInt64TypeInContext".}
+proc LLVMFunctionType*(ReturnType: LLVMTypeRef,
+                       ParamTypes: ptr LLVMTypeRef,
+                       ParamCount: cuint,
+                       IsVarArg: LLVMBool): LLVMTypeRef
+  {.cdecl, importc: "LLVMFunctionType".}
+
+# --- functions ---
+proc LLVMAddFunction*(M: LLVMModuleRef, Name: cstring,
+                      FunctionTy: LLVMTypeRef): LLVMValueRef
+  {.cdecl, importc: "LLVMAddFunction".}
+proc LLVMAppendBasicBlockInContext*(C: LLVMContextRef, Fn: LLVMValueRef,
+                                    Name: cstring): LLVMBasicBlockRef
+  {.cdecl, importc: "LLVMAppendBasicBlockInContext".}
+proc LLVMPositionBuilderAtEnd*(Builder: LLVMBuilderRef, Block: LLVMBasicBlockRef)
+  {.cdecl, importc: "LLVMPositionBuilderAtEnd".}
+
+# --- values ---
+proc LLVMConstInt*(IntTy: LLVMTypeRef, N: culonglong,
+                   SignExtend: LLVMBool): LLVMValueRef
+  {.cdecl, importc: "LLVMConstInt".}
+
+# --- instructions ---
+proc LLVMBuildRet*(Builder: LLVMBuilderRef, V: LLVMValueRef): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildRet".}
+
+# --- verification ---
+proc LLVMVerifyModule*(M: LLVMModuleRef,
+                       Action: LLVMVerifierFailureAction,
+                       OutMessage: ptr cstring): LLVMBool
+  {.cdecl, importc: "LLVMVerifyModule".}
+proc LLVMDisposeMessage*(Message: cstring)
+  {.cdecl, importc: "LLVMDisposeMessage".}

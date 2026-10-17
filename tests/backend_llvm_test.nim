@@ -14,3 +14,28 @@ suite "llvm-c bindings":
     LLVMDisposeBuilder(builder)
     LLVMDisposeModule(llmod)
     LLVMContextDispose(ctx)
+
+  test "main returns 42, verifies":
+    let ctx = LLVMContextCreate()
+    let llmod = LLVMModuleCreateWithNameInContext("lidw_test2", ctx)
+    let builder = LLVMCreateBuilderInContext(ctx)
+
+    let i64 = LLVMInt64TypeInContext(ctx)
+    let fnTy = LLVMFunctionType(i64, nil, 0, 0)
+    let mainFn = LLVMAddFunction(llmod, "main", fnTy)
+    let entry = LLVMAppendBasicBlockInContext(ctx, mainFn, "entry")
+    LLVMPositionBuilderAtEnd(builder, entry)
+
+    let fortyTwo = LLVMConstInt(i64, 42, 0)
+    discard LLVMBuildRet(builder, fortyTwo)
+
+    var errMsg: cstring = nil
+    let verifyOk = LLVMVerifyModule(llmod, ReturnStatus, addr errMsg)
+    if verifyOk != 0:
+      echo "verify failed: ", $errMsg
+      LLVMDisposeMessage(errMsg)
+    check verifyOk == 0
+
+    LLVMDisposeBuilder(builder)
+    LLVMDisposeModule(llmod)
+    LLVMContextDispose(ctx)

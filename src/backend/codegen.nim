@@ -1,15 +1,46 @@
 # Codegen: LIDW AST -> LLVM IR text.
-# <NOTE>#37: Step 2 skeleton — ignores the program body for now and emits
-# `main: i64 () { ret i64 0 }`. AST traversal lands in Step 3.
 
 import ../parser/ast
 import ./llvm_c
 
+type
+  CodegenCtx = object
+    ctx: LLVMContextRef
+    builder: LLVMBuilderRef
+    i64: LLVMTypeRef
+
+proc emitExpr(c: CodegenCtx, n: Node): LLVMValueRef =
+  case n.kind
+  of nkInt:
+    LLVMConstInt(c.i64, cast[culonglong](n.intVal), 0)
+  of nkUnary:
+    case n.unop
+    of uoNeg:
+      LLVMBuildNeg(c.builder, emitExpr(c, n.operand), "neg")
+  of nkBinOp:
+    let lhs = emitExpr(c, n.left)
+    let rhs = emitExpr(c, n.right)
+    case n.op
+    of boAdd: LLVMBuildAdd(c.builder, lhs, rhs, "add")
+    of boSub: LLVMBuildSub(c.builder, lhs, rhs, "sub")
+    of boMul: LLVMBuildMul(c.builder, lhs, rhs, "mul")
+    of boDiv: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
+    of boMod: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
+    else:
+      raise newException(ValueError,
+        "codegen: unsupported binop: " & opStr(n.op))
+  else:
+    raise newException(ValueError,
+      "codegen: unsupported node: " & $n.kind)
+
+proc isValueExpr(n: Node): bool =
+  n.kind in {nkInt, nkUnary, nkBinOp}
+
 proc emitModule*(program: Node): string =
   ## Lower the program and return textual LLVM IR.
-  ## <TODO>#38: Step 3 — walk program.stmts and emit real instructions.
-  discard program
-
+  ## <TODO>#39: temporary semantics — main returns the last value
+  ## expression. Replace with real program semantics once `print`/side
+  ## effects exist.
   let ctx = LLVMContextCreate()
   defer: LLVMContextDispose(ctx)
   let llmod = LLVMModuleCreateWithNameInContext("lidw", ctx)
@@ -22,7 +53,17 @@ proc emitModule*(program: Node): string =
   let mainFn = LLVMAddFunction(llmod, "main", fnTy)
   let entry = LLVMAppendBasicBlockInContext(ctx, mainFn, "entry")
   LLVMPositionBuilderAtEnd(builder, entry)
-  discard LLVMBuildRet(builder, LLVMConstInt(i64, 0, 0))
+
+  let c = CodegenCtx(ctx: ctx, builder: builder, i64: i64)
+
+  var retVal: LLVMValueRef = nil
+  if program.kind == nkProgram and program.stmts.len > 0:
+    let last = program.stmts[^1]
+    if isValueExpr(last):
+      retVal = emitExpr(c, last)
+  if retVal == nil:
+    retVal = LLVMConstInt(i64, 0, 0)
+  discard LLVMBuildRet(builder, retVal)
 
   var errMsg: cstring = nil
   let verifyOk = LLVMVerifyModule(llmod, ReturnStatus, addr errMsg)
@@ -31,5 +72,4 @@ proc emitModule*(program: Node): string =
     if errMsg != nil: LLVMDisposeMessage(errMsg)
     raise newException(ValueError, "LLVM verify failed: " & msg)
 
-  let text = $LLVMPrintModuleToString(llmod)
-  result = text
+  result = $LLVMPrintModuleToString(llmod)

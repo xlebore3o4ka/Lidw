@@ -38,12 +38,28 @@ suite "llvm-c bindings":
     LLVMDisposeModule(llmod)
     LLVMContextDispose(ctx)
 
-  test "emitModule skeleton returns 0":
-    # <NOTE>#38: Step 2 — real AST traversal comes in Step 3.
+  test "emitModule empty program returns 0":
     let p = Node(kind: nkProgram, stmts: @[])
     let ir = emitModule(p)
     check "define i64 @main" in ir
     check "ret i64 0" in ir
+
+  test "emitModule single int":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkInt, intVal: 42)
+    ])
+    let ir = emitModule(p)
+    check "ret i64 42" in ir
+
+  test "emitModule addition constant-folds":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkBinOp, op: boAdd,
+        left: Node(kind: nkInt, intVal: 1),
+        right: Node(kind: nkInt, intVal: 2))
+    ])
+    let ir = emitModule(p)
+    # LLVM IR builder constant-folds; no instruction survives.
+    check "ret i64 3" in ir
 
   test "main returns 42, verifies":
     let ctx = LLVMContextCreate()

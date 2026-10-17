@@ -68,6 +68,26 @@ proc LLVMConstInt*(IntTy: LLVMTypeRef, N: culonglong,
 proc LLVMBuildRet*(Builder: LLVMBuilderRef, V: LLVMValueRef): LLVMValueRef
   {.cdecl, importc: "LLVMBuildRet".}
 
+# --- arithmetic ---
+proc LLVMBuildAdd*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                   Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildAdd".}
+proc LLVMBuildSub*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                   Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildSub".}
+proc LLVMBuildMul*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                   Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildMul".}
+proc LLVMBuildSDiv*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildSDiv".}
+proc LLVMBuildSRem*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildSRem".}
+proc LLVMBuildNeg*(Builder: LLVMBuilderRef, V: LLVMValueRef,
+                   Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildNeg".}
+
 # --- verification ---
 proc LLVMVerifyModule*(M: LLVMModuleRef,
                        Action: LLVMVerifierFailureAction,

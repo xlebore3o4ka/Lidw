@@ -70,8 +70,10 @@ suite "parser":
     check p0.paramType.kind == nkFnType
     check p0.paramType.fnParams.len == 1
 
-  test "function type trailing comma is parse error":
-    check expectParse("Int(Int a,) f = a") == lekParse
+  test "function type trailing comma accepted":
+    # parseType loop: after a param, ',' then ')' ends the list.
+    let n = p("Int(Int a,) f = a")
+    check n.stmts[0].declTypeNode.fnParams.len == 1
 
   test "decl has typeNode":
     let n = p("Int x = 10")

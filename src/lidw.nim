@@ -6,12 +6,14 @@ import ./parser/lexer
 import ./parser/ast
 import ./parser/parser
 import ./visitors/sema
+import ./backend/codegen
 
 proc usage() =
   echo "lidw " & LidwVersion
   echo "usage: lidw parse '<expr>'              print token stream"
   echo "       lidw ast '<expr>'                print AST"
   echo "       lidw check '<expr>'              run sema, print typed AST"
+  echo "       lidw build '<expr>'              emit LLVM IR (skeleton)"
   echo "       lidw --version         print version"
 
 proc needExpr(cmd: string, args: seq[string]) =
@@ -39,6 +41,9 @@ proc main() =
     of "check":
       needExpr(cmd, args)
       echo $runSema(parseProgram(lexAll(args[1])))
+    of "build":
+      needExpr(cmd, args)
+      echo emitModule(parseProgram(lexAll(args[1])))
     else:
       usage(); quit(1)
   except LidwError as e:

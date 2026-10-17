@@ -3,6 +3,8 @@
 import std/unittest
 import std/strutils
 import ../src/backend/llvm_c
+import ../src/backend/codegen
+import ../src/parser/ast
 
 suite "llvm-c bindings":
   test "create and dispose in order":
@@ -35,6 +37,13 @@ suite "llvm-c bindings":
     LLVMDisposeBuilder(builder)
     LLVMDisposeModule(llmod)
     LLVMContextDispose(ctx)
+
+  test "emitModule skeleton returns 0":
+    # <NOTE>#38: Step 2 — real AST traversal comes in Step 3.
+    let p = Node(kind: nkProgram, stmts: @[])
+    let ir = emitModule(p)
+    check "define i64 @main" in ir
+    check "ret i64 0" in ir
 
   test "main returns 42, verifies":
     let ctx = LLVMContextCreate()

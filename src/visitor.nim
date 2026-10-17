@@ -1,0 +1,26 @@
+# Visitor dispatch over LIDW AST.
+# <NOTE>#7: generic visit; V implements handlers and decides traversal order.
+
+import ./parser/ast
+
+proc visit*[V](v: var V, n: Node) =
+  ## Dispatch on n.kind to V's handler.
+  ## V must provide visitInt, visitFloat, visitUnary, visitBinOp —
+  ## each with signature (var V, Node).
+  ## Recursion is the visitor's responsibility; no automatic walk.
+  case n.kind
+  of nkInt:   v.visitInt(n)
+  of nkFloat: v.visitFloat(n)
+  of nkUnary: v.visitUnary(n)
+  of nkBinOp: v.visitBinOp(n)
+
+when isMainModule:
+  # smoke: prove dispatch type-checks; no real visitor yet.
+  type Noop = object
+  proc visitInt*(v: var Noop, n: Node) = discard
+  proc visitFloat*(v: var Noop, n: Node) = discard
+  proc visitUnary*(v: var Noop, n: Node) = discard
+  proc visitBinOp*(v: var Noop, n: Node) = discard
+  var v: Noop
+  let n = Node(kind: nkInt, intVal: 1)
+  visit(v, n)

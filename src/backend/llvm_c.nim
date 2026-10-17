@@ -99,6 +99,26 @@ proc LLVMBuildLoad2*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,
                      PointerVal: LLVMValueRef, Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildLoad2".}
 
+# --- Bool infrastructure ---
+# <NOTE>#42: LLVMIntPredicate values from llvm-c/Core.h.
+# signed compares for Int, eq/ne for both Int and Bool.
+const
+  LLVMIntEQ*  = 32.cint
+  LLVMIntNE*  = 33.cint
+  LLVMIntSGT* = 38.cint
+  LLVMIntSGE* = 39.cint
+  LLVMIntSLT* = 40.cint
+  LLVMIntSLE* = 41.cint
+
+proc LLVMInt1TypeInContext*(C: LLVMContextRef): LLVMTypeRef
+  {.cdecl, importc: "LLVMInt1TypeInContext".}
+proc LLVMBuildICmp*(Builder: LLVMBuilderRef, Op: cint,
+                    LHS, RHS: LLVMValueRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildICmp".}
+proc LLVMBuildZExt*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                    DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildZExt".}
+
 # --- verification ---
 proc LLVMVerifyModule*(M: LLVMModuleRef,
                        Action: LLVMVerifierFailureAction,

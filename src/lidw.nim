@@ -43,7 +43,7 @@ proc main() =
       echo $runSema(parseProgram(lexAll(args[1])))
     of "build":
       needExpr(cmd, args)
-      echo emitModule(parseProgram(lexAll(args[1])))
+      echo emitModule(runSema(parseProgram(lexAll(args[1]))))
     else:
       usage(); quit(1)
   except LidwError as e:

@@ -2,6 +2,7 @@
 
 import std/tables
 import ../parser/ast
+import ../types
 import ./llvm_c
 
 type
@@ -9,7 +10,24 @@ type
     ctx: LLVMContextRef
     builder: LLVMBuilderRef
     i64: LLVMTypeRef
+    i1: LLVMTypeRef
     vars: Table[string, LLVMValueRef]   ## name -> alloca
+    varTypes: Table[string, LLVMTypeRef]  ## name -> slot LLVM type (i64 or i1)
+
+proc cmpPredicate(op: BinOp): cint =
+  case op
+  of boEq: LLVMIntEQ
+  of boNe: LLVMIntNE
+  of boLt: LLVMIntSLT
+  of boLe: LLVMIntSLE
+  of boGt: LLVMIntSGT
+  of boGe: LLVMIntSGE
+  else:
+    raise newException(ValueError, "cmpPredicate: not a comparison: " & opStr(op))
+
+proc toBool(c: CodegenCtx, v: LLVMValueRef): LLVMValueRef =
+  ## Convert i64 value to i1 (non-zero = true).
+  LLVMBuildICmp(c.builder, LLVMIntNE, v, LLVMConstInt(c.i64, 0, 0), "to_bool")
 
 proc emitExpr(c: CodegenCtx, n: Node): LLVMValueRef =
   case n.kind
@@ -20,24 +38,40 @@ proc emitExpr(c: CodegenCtx, n: Node): LLVMValueRef =
     of uoNeg:
       LLVMBuildNeg(c.builder, emitExpr(c, n.operand), "neg")
   of nkBinOp:
-    let lhs = emitExpr(c, n.left)
-    let rhs = emitExpr(c, n.right)
     case n.op
-    of boAdd: LLVMBuildAdd(c.builder, lhs, rhs, "add")
-    of boSub: LLVMBuildSub(c.builder, lhs, rhs, "sub")
-    of boMul: LLVMBuildMul(c.builder, lhs, rhs, "mul")
-    of boDiv: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
-    of boMod: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
-    else:
-      raise newException(ValueError,
-        "codegen: unsupported binop: " & opStr(n.op))
+    of boAdd, boSub, boMul, boDiv, boMod:
+      let lhs = emitExpr(c, n.left)
+      let rhs = emitExpr(c, n.right)
+      case n.op
+      of boAdd: LLVMBuildAdd(c.builder, lhs, rhs, "add")
+      of boSub: LLVMBuildSub(c.builder, lhs, rhs, "sub")
+      of boMul: LLVMBuildMul(c.builder, lhs, rhs, "mul")
+      of boDiv: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
+      of boMod: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
+      else: raise newException(ValueError, "unreachable")
+    of boEq, boNe, boLt, boLe, boGt, boGe:
+      # <NOTE>#43: comparisons operate on a common representation.
+      # Int/iLit -> i64; Bool -> i1; mixed Int/iLit vs Bool is rejected
+      # by sema (except Int vs iLit which are both i64 here).
+      let lIsBool = n.left.typ != nil and n.left.typ.kind == tyBool
+      let rIsBool = n.right.typ != nil and n.right.typ.kind == tyBool
+      var lhs: LLVMValueRef
+      var rhs: LLVMValueRef
+      if lIsBool or rIsBool:
+        lhs = if lIsBool: emitExpr(c, n.left) else: toBool(c, emitExpr(c, n.left))
+        rhs = if rIsBool: emitExpr(c, n.right) else: toBool(c, emitExpr(c, n.right))
+      else:
+        lhs = emitExpr(c, n.left)
+        rhs = emitExpr(c, n.right)
+      LLVMBuildICmp(c.builder, cmpPredicate(n.op), lhs, rhs, "cmp")
   of nkIdent:
     let slot = c.vars.getOrDefault(n.identName)
     if slot == nil:
       raise newException(ValueError,
         "codegen: undefined variable: " & n.identName)
     let loadName = n.identName & "_load"
-    LLVMBuildLoad2(c.builder, c.i64, slot, loadName.cstring)
+    let ty = c.varTypes.getOrDefault(n.identName, c.i64)
+    LLVMBuildLoad2(c.builder, ty, slot, loadName.cstring)
   else:
     raise newException(ValueError,
       "codegen: unsupported node: " & $n.kind)
@@ -49,11 +83,20 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   of nkDecl:
     # <TODO>#41: alloca in current block; for non-linear control flow
     # these must go to the entry block.
-    let slot = LLVMBuildAlloca(c.builder, c.i64, n.declName.cstring)
+    let llvmTy =
+      if n.declType == "Bool": c.i1
+      else: c.i64          # Int, I64, anything else sema already rejected
+    let slot = LLVMBuildAlloca(c.builder, llvmTy, n.declName.cstring)
     c.vars[n.declName] = slot
-    let initVal =
-      if n.declInit != nil: emitExpr(c, n.declInit)
-      else: LLVMConstInt(c.i64, 0, 0)
+    c.varTypes[n.declName] = llvmTy
+    var initVal: LLVMValueRef
+    if n.declInit == nil:
+      initVal = LLVMConstInt(llvmTy, 0, 0)
+    else:
+      initVal = emitExpr(c, n.declInit)
+      let initIsBool = n.declInit.typ != nil and n.declInit.typ.kind == tyBool
+      if llvmTy == c.i1 and not initIsBool:
+        initVal = toBool(c, initVal)
     discard LLVMBuildStore(c.builder, initVal, slot)
     nil
   of nkAssign:
@@ -61,7 +104,11 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     if slot == nil:
       raise newException(ValueError,
         "codegen: assign to undeclared: " & n.assignName)
-    let val = emitExpr(c, n.assignValue)
+    let llvmTy = c.varTypes.getOrDefault(n.assignName, c.i64)
+    var val = emitExpr(c, n.assignValue)
+    let valIsBool = n.assignValue.typ != nil and n.assignValue.typ.kind == tyBool
+    if llvmTy == c.i1 and not valIsBool:
+      val = toBool(c, val)
     discard LLVMBuildStore(c.builder, val, slot)
     nil
   of nkInt, nkIdent, nkUnary, nkBinOp:
@@ -83,22 +130,28 @@ proc emitModule*(program: Node): string =
   defer: LLVMDisposeBuilder(builder)
 
   let i64 = LLVMInt64TypeInContext(ctx)
+  let i1 = LLVMInt1TypeInContext(ctx)
   let fnTy = LLVMFunctionType(i64, nil, 0, 0)
   let mainFn = LLVMAddFunction(llmod, "main", fnTy)
   let entry = LLVMAppendBasicBlockInContext(ctx, mainFn, "entry")
   LLVMPositionBuilderAtEnd(builder, entry)
 
-  var c = CodegenCtx(ctx: ctx, builder: builder, i64: i64,
-                     vars: initTable[string, LLVMValueRef]())
+  var c = CodegenCtx(ctx: ctx, builder: builder, i64: i64, i1: i1,
+                     vars: initTable[string, LLVMValueRef](),
+                     varTypes: initTable[string, LLVMTypeRef]())
 
   var retVal: LLVMValueRef = nil
+  var retIsBool = false
   if program.kind == nkProgram:
     for stmt in program.stmts:
       let v = emitStmt(c, stmt)
       if v != nil:
         retVal = v
+        retIsBool = stmt.typ != nil and stmt.typ.kind == tyBool
   if retVal == nil:
     retVal = LLVMConstInt(i64, 0, 0)
+  elif retIsBool:
+    retVal = LLVMBuildZExt(builder, retVal, i64, "bool_to_i64")
   discard LLVMBuildRet(builder, retVal)
 
   var errMsg: cstring = nil

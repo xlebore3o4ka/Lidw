@@ -114,6 +114,23 @@ suite "llvm-c bindings":
     check "store i64 5" in ir
     check "load i64" in ir
 
+  test "emitModule Bool decl allocates i1 and converts init":
+    # LLVM constant-folds icmp on constants; store i1 true is the result.
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "b", declType: "Bool",
+           declInit: Node(kind: nkInt, intVal: 1))
+    ])
+    let ir = emitModule(p)
+    check "alloca i1" in ir
+    check "store i1 true" in ir
+
+  test "emitModule Bool decl no init stores i1 false":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "b", declType: "Bool", declInit: nil)
+    ])
+    let ir = emitModule(p)
+    check "store i1 false" in ir
+
   test "main returns 42, verifies":
     let ctx = LLVMContextCreate()
     let llmod = LLVMModuleCreateWithNameInContext("lidw_test2", ctx)

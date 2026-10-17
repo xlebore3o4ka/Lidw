@@ -75,3 +75,7 @@ proc LLVMVerifyModule*(M: LLVMModuleRef,
   {.cdecl, importc: "LLVMVerifyModule".}
 proc LLVMDisposeMessage*(Message: cstring)
   {.cdecl, importc: "LLVMDisposeMessage".}
+
+# --- printing ---
+proc LLVMPrintModuleToString*(M: LLVMModuleRef): cstring
+  {.cdecl, importc: "LLVMPrintModuleToString".}

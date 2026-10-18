@@ -265,6 +265,29 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
     else:
       LLVMBuildCall2(c.builder, llvmFnTy, fnVal, addr argVals[0],
                      cuint(argVals.len), "call")
+  of nkAssign:
+    # <NOTE>#108: assignment as an expression. Store value, return the
+    # assigned value. Mutability is a sema concern; codegen trusts it.
+    let slot = c.lookupVar(n.assignName)
+    if slot == nil:
+      raise newException(ValueError,
+        "codegen: assign to undeclared: " & n.assignName)
+    let llvmTy = c.lookupVarType(n.assignName, c.i64)
+    var val: LLVMValueRef
+    if n.assignValue.kind == nkInt:
+      val = LLVMConstInt(llvmTy,
+        cast[culonglong](n.assignValue.intVal), 0)
+    elif n.assignValue.typ != nil and n.assignValue.typ.kind == tyILit:
+      val = LLVMConstInt(llvmTy,
+        cast[culonglong](n.assignValue.typ.value), 0)
+    else:
+      val = emitExpr(c, n.assignValue)
+      if n.assignValue.typ.kind != n.typ.kind:
+        raise newException(ValueError,
+          "codegen: mismatched assign type not supported yet (7d-2): " &
+          $n.assignValue.typ.kind & " -> " & $n.typ.kind)
+    discard LLVMBuildStore(c.builder, val, slot)
+    val
   of nkCast:
     # <NOTE>#76: cast dispatch on (source kind, target kind). iLit is
     # folded at the target width, no IR instruction emitted. Concrete
@@ -421,26 +444,9 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     discard LLVMBuildStore(c.builder, initVal, slot)
     nil
   of nkAssign:
-    let slot = c.lookupVar(n.assignName)
-    if slot == nil:
-      raise newException(ValueError,
-        "codegen: assign to undeclared: " & n.assignName)
-    let llvmTy = c.lookupVarType(n.assignName, c.i64)
-    var val: LLVMValueRef
-    if n.assignValue.kind == nkInt:
-      val = LLVMConstInt(llvmTy,
-        cast[culonglong](n.assignValue.intVal), 0)
-    elif n.assignValue.typ != nil and n.assignValue.typ.kind == tyILit:
-      val = LLVMConstInt(llvmTy,
-        cast[culonglong](n.assignValue.typ.value), 0)
-    else:
-      val = emitExpr(c, n.assignValue)
-      # <TODO>#66: coerce concrete source to slot width (7d-2).
-      if n.assignValue.typ.kind != n.typ.kind:
-        raise newException(ValueError,
-          "codegen: mismatched assign type not supported yet (7d-2): " &
-          $n.assignValue.typ.kind & " -> " & $n.typ.kind)
-    discard LLVMBuildStore(c.builder, val, slot)
+    # <NOTE>#108: emitExpr(nkAssign) does the store and returns the
+    # value; as a statement the value is discarded.
+    discard emitExpr(c, n)
     nil
   of nkInt, nkIdent, nkUnary, nkBinOp, nkCast:
     emitExpr(c, n)

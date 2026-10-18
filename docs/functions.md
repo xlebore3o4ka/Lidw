@@ -12,7 +12,13 @@ function that takes Int and returns Int".
 
 The body is a single expression. It is checked against the return
 type. A multi-statement body is a block `( ... )` whose value comes
-from `is`.
+from `is`. Assignment is an expression
+(see [expressions.md](expressions.md#assignment)), so the body can
+be an assignment:
+
+```
+Int(Int a$) f = a = 1     -- body assigns a = 1, returns 1
+```
 
 ```
 Int(Int a) f = a + 1

@@ -118,6 +118,27 @@ The result type is the target. As a value, the cast is checked
 against `ctx` like any other expression: `Int z = (5 as U8)` is a
 sema error because `U8` does not fit `Int`.
 
+## Assignment
+
+`ident = expr` assigns `expr` to `ident`. The target must be bound to
+a mutable variable in scope.
+
+Assignment is an expression: its value is the value of `expr`. This
+makes it usable where an expression is expected:
+
+```
+Int(Int a$) f = a = 1              -- fn body is an assignment; returns 1
+Int x = 0 Int y = 0 x = y = 5      -- right-assoc: both end up 5
+Int x = 0 (x = 5) + 1              -- value of x=5 is 5; result 6
+```
+
+Precedence: assignment is the loosest, below binary operators.
+Right-associative: `a = b = c` parses as `a = (b = c)`.
+
+The target must be a bare identifier. `a + 1 = 2` is a parse error
+(nothing to assign to). `f(x) = 5` is a parse error for the same
+reason.
+
 ## Function types and calls
 
 `T(A, B)` is a function type: takes `A` and `B`, returns `T`. It is

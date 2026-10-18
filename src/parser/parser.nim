@@ -152,6 +152,18 @@ proc parseAsPostfix(p: var Parser): Node =
                   line: asTok.line, col: asTok.col)
 
 proc parseExpr(p: var Parser, minPrec: int): Node =
+  # <NOTE>#107: assignment is the lowest-precedence expression, right-
+  # associative: `a = b = c` is `a = (b = c)`. Only attempted at top
+  # level (minPrec == 0), so `1 + a = 2` does NOT parse as
+  # `1 + (a = 2)`. Target must be a bare ident.
+  if minPrec == 0 and p.peek().kind == tkIdent and
+     p.tokens[p.pos + 1].kind == tkEquals:
+    let nameTok = p.peek()
+    p.advance()   # ident
+    p.advance()   # =
+    let val = parseExpr(p, 0)
+    return Node(kind: nkAssign, assignName: nameTok.word,
+                assignValue: val, line: nameTok.line, col: nameTok.col)
   result = parseAsPostfix(p)
   while true:
     let t = p.peek()
@@ -261,15 +273,6 @@ proc parseDecl(p: var Parser): Node =
                   declTypeNode: typeNode, declMut: mut, declInit: nil,
                   line: nameTok.line, col: nameTok.col)
 
-proc parseAssign(p: var Parser): Node =
-  let nameTok = p.peek()
-  p.advance()
-  let eqTok = p.peek()
-  p.advance()
-  let val = parseExpr(p, 0)
-  result = Node(kind: nkAssign, assignName: nameTok.word, assignValue: val,
-                line: eqTok.line, col: eqTok.col)
-
 # <NOTE>#48: an if/else branch takes exactly ONE statement without
 # parentheses. A multi-stmt body must be an explicit `( ... )` block.
 # This prevents a bare branch from absorbing the next statement of the
@@ -304,8 +307,6 @@ proc parseStmt(p: var Parser): Node =
   elif t.kind == tkIf:
     p.advance()
     parseIfLike(p, t)
-  elif t.kind == tkIdent and p.tokens[p.pos + 1].kind == tkEquals:
-    parseAssign(p)
   else:
     parseExpr(p, 0)
 

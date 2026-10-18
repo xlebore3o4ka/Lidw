@@ -110,6 +110,28 @@ suite "parser":
     check p("").stmts.len == 0
     check p(";;;").stmts.len == 0
 
+  test "assign in fn body":
+    let n = p("Int(Int a$) f = a = 1")
+    check n.stmts.len == 1
+    check n.stmts[0].kind == nkDecl
+    check n.stmts[0].declInit.kind == nkAssign
+    check n.stmts[0].declInit.assignName == "a"
+
+  test "assign in grouping":
+    let n = p("Int(Int a$) f = (a = 1)")
+    check n.stmts[0].declInit.kind == nkAssign
+
+  test "chained assign is right-assoc":
+    let n = p("Int x = 0 Int y = 0 x = y = 5")
+    check n.stmts.len == 3
+    check n.stmts[2].kind == nkAssign
+    check n.stmts[2].assignName == "x"
+    check n.stmts[2].assignValue.kind == nkAssign
+    check n.stmts[2].assignValue.assignName == "y"
+
+  test "assign target must be ident":
+    check expectParse("1 + a = 2") == lekParse
+
   test "assign":
     let n = p("x = 5")
     check n.stmts.len == 1

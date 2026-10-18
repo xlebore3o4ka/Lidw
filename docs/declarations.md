@@ -78,6 +78,15 @@ Assignment requires `x` to be a mutable variable already in scope.
 - Mutable `x` → the right-hand side is analyzed in context of `x`'s
   type. If it does not fit → `cannot assign <got> to <type> variable x`.
 
+Assignment is an expression (see
+[expressions.md](expressions.md#assignment)). Its value is the value
+of `expr`. This allows assignment in expression position:
+
+```
+Int(Int a$) f = a = 1              -- body is `a = 1`; returns 1
+Int x = 0 Int y = 0 x = y = 5      -- chained, right-associative
+```
+
 ## Initialization order
 
 Declarations are processed in order. Using a name before its

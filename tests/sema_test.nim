@@ -415,6 +415,21 @@ suite "sema":
   test "arithmetic on Bool still rejected":
     check expectSema("Bool b = 1 Bool c = b + 1") == lekSema
 
+  test "fn body can be assign":
+    let n = sema("Int(Int a$) f = a = 1")
+    check n.stmts[0].typ.kind == tyFn
+    check n.stmts[0].declInit.kind == nkAssign
+    check n.stmts[0].declInit.typ.kind == tyI64
+
+  test "chained assign right-assoc types":
+    let n = sema("Int x = 0 Int y = 0 x = y = 5")
+    check n.stmts[2].kind == nkAssign
+    check n.stmts[2].typ.kind == tyI64
+    check n.stmts[2].assignValue.typ.kind == tyI64
+
+  test "assign immutable rejected in fn body":
+    check expectSema("Int(Int a) f = a = 1") == lekSema
+
   test "cast Int to Int":
     let n = sema("Int x = 5 Int y = x as Int")
     check n.stmts[1].declInit.kind == nkCast

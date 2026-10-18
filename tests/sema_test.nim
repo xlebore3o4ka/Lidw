@@ -430,7 +430,27 @@ suite "sema":
   test "assign immutable rejected in fn body":
     check expectSema("Int(Int a) f = a = 1") == lekSema
 
+  test "continue outside loop rejected":
+    check expectSema("continue") == lekSema
+
+  test "continue in while ok":
+    let n = sema("while 1 continue")
+    check n.stmts[0].kind == nkWhile
+
+  test "continue in nested while ok":
+    let n = sema("while 1 (while 1 continue; continue)")
+    check n.stmts[0].kind == nkWhile
+
+  test "unreachable after continue":
+    check expectSema("while 1 (continue; 1)") == lekSema
+    try:
+      discard sema("while 1 (continue; 1)")
+      check false
+    except LidwError as e:
+      check "unreachable statement after continue" in e.msg
+
   test "break outside loop rejected":
+
     check expectSema("break") == lekSema
 
   test "break in while ok":

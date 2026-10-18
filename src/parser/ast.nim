@@ -22,6 +22,8 @@ type
     nkRet
     nkWhile
     nkBreak
+    nkContinue
+
 
 
 
@@ -81,6 +83,8 @@ type
       whileCond*: Node
       whileBody*: Node
     of nkBreak: discard
+    of nkContinue: discard
+
 
 
 
@@ -114,6 +118,8 @@ proc isTerminal*(n: Node): bool =
   case n.kind
   of nkRet: true
   of nkBreak: true
+  of nkContinue: true
+
 
   of nkBlock, nkProgram:
     n.stmts.len > 0 and isTerminal(n.stmts[^1])
@@ -232,6 +238,9 @@ proc render(n: Node, depth: int): string =
     parts.join("\n")
   of nkBreak:
     pad & "break @" & $n.line & ":" & $n.col & ts
+  of nkContinue:
+    pad & "continue @" & $n.line & ":" & $n.col & ts
+
 
 
 

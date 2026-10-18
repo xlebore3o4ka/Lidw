@@ -54,6 +54,8 @@ proc visitCall*(v: var SemaVisitor, n: Node)
 proc visitRet*(v: var SemaVisitor, n: Node)
 proc visitWhile*(v: var SemaVisitor, n: Node)
 proc visitBreak*(v: var SemaVisitor, n: Node)
+proc visitContinue*(v: var SemaVisitor, n: Node)
+
 
 
 
@@ -384,7 +386,12 @@ proc visitBlock*(v: var SemaVisitor, n: Node) =
         visit(v, s)
         if isTerminal(s):
           terminal = true
-          terminalName = if s.kind == nkBreak: "break" else: "ret"
+          terminalName =
+            case s.kind
+            of nkBreak: "break"
+            of nkContinue: "continue"
+            else: "ret"
+
 
 
   finally:
@@ -650,7 +657,14 @@ proc visitBreak*(v: var SemaVisitor, n: Node) =
       "break outside loop", n.line, n.col)
   n.typ = nulType()
 
+proc visitContinue*(v: var SemaVisitor, n: Node) =
+  if v.curLoopDepth == 0:
+    raise lidwError(lekSema,
+      "continue outside loop", n.line, n.col)
+  n.typ = nulType()
+
 proc visitRet*(v: var SemaVisitor, n: Node) =
+
 
   # <NOTE>#111: ret is only valid inside a function body. Outside,
   # suggest `is` (which yields from a block, not from a function).

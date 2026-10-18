@@ -194,7 +194,13 @@ suite "lexer":
     check ts[1].kind == tkComma
     check ts[3].kind == tkEOF
 
+  test "continue is a keyword":
+    check lexAll("continue")[0].kind == tkContinue
+    check lexAll("Continue")[0].kind == tkType
+    check lexAll("continues")[0].kind == tkIdent
+
   test "break is a keyword":
+
     check lexAll("break")[0].kind == tkBreak
     check lexAll("Break")[0].kind == tkType
     check lexAll("breaks")[0].kind == tkIdent

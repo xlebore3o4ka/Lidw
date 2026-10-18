@@ -28,6 +28,8 @@ proc visit*[V](v: var V, n: Node) =
   of nkRet:    v.visitRet(n)
   of nkWhile:  v.visitWhile(n)
   of nkBreak:  v.visitBreak(n)
+  of nkContinue: v.visitContinue(n)
+
 
 
 
@@ -54,6 +56,8 @@ when isMainModule:
   proc visitRet*(v: var Noop, n: Node) = discard
   proc visitWhile*(v: var Noop, n: Node) = discard
   proc visitBreak*(v: var Noop, n: Node) = discard
+  proc visitContinue*(v: var Noop, n: Node) = discard
+
 
 
 

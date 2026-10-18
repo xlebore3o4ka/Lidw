@@ -33,7 +33,9 @@ type
     tkRet        ## ret (early return)
     tkWhile      ## while
     tkBreak      ## break
+    tkContinue   ## continue
     tkEOF        ## end of input
+
 
 
 
@@ -79,7 +81,9 @@ proc `$`*(t: Token): string =
     of tkRet:     "tkRet"
     of tkWhile:   "tkWhile"
     of tkBreak:   "tkBreak"
+    of tkContinue: "tkContinue"
     of tkEOF:     "tkEOF"
+
 
 
 

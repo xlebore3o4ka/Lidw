@@ -1,7 +1,12 @@
 # Codegen: LIDW AST -> LLVM IR text.
 
-import std/tables
+import std/[tables, hashes]
 import ../parser/ast
+
+# <NOTE>#128: Node is a ref; pointer identity is the right key for
+# per-declaration alloca slots (shadowing creates distinct nodes).
+proc hash(n: Node): Hash = hash(cast[pointer](n))
+
 import ../types
 import ./llvm_c
 
@@ -18,6 +23,13 @@ type
     printfTy: LLVMTypeRef
     printfFmt: LLVMValueRef
     curFnRetKind: TypeKind  ## ret kind of the fn whose body is emitted
+    declSlots: Table[Node, LLVMValueRef]
+      ## <NOTE>#123: alloca is hoisted to the function entry block so
+      ## that a decl inside a loop body (loops not yet, but coming)
+      ## does not re-allocate on every iteration. Keyed by AST node:
+      ## each nkDecl gets exactly one slot, regardless of shadowing
+      ## (different nodes, different slots).
+
 
     # <NOTE>#45: scoped symbol tables. Lookup walks from innermost to
     # outermost. Mirrors the sema scope model; shadowing produces a new
@@ -174,7 +186,53 @@ proc ensurePrintf(c: var CodegenCtx) =
   c.printfTy = fnTy
   c.printfFn = LLVMAddFunction(c.module, "printf", fnTy)
 
+proc collectDecls(n: Node, acc: var seq[Node]) =
+
+  ## <NOTE>#124: depth-first walk, collect every nkDecl that will need
+  ## a stack slot. Fn decls are skipped (they are emitted by pass 1
+  ## of emitModule, not as locals). Recurse into declInit, if-branches,
+  ## blocks, and expressions that may contain nested blocks.
+  if n == nil: return
+  case n.kind
+  of nkDecl:
+    if n.typ != nil and n.typ.kind == tyFn: return
+    acc.add n
+    collectDecls(n.declInit, acc)
+  of nkBlock, nkProgram:
+    for s in n.stmts: collectDecls(s, acc)
+  of nkIf:
+    collectDecls(n.ifCond, acc)
+    collectDecls(n.ifThen, acc)
+    collectDecls(n.ifElse, acc)
+  of nkBinOp:
+    collectDecls(n.left, acc); collectDecls(n.right, acc)
+  of nkUnary:  collectDecls(n.operand, acc)
+  of nkAssign: collectDecls(n.assignValue, acc)
+  of nkCast:   collectDecls(n.castExpr, acc)
+  of nkCall:
+    collectDecls(n.callee, acc)
+    for a in n.args: collectDecls(a, acc)
+  of nkIs:
+    collectDecls(n.isValue, acc)
+  of nkRet:
+    if n.retExpr != nil: collectDecls(n.retExpr, acc)
+  else: discard
+
+
+proc hoistAllocas(c: var CodegenCtx, root: Node) =
+  ## Emit alloca for every collected nkDecl into the current basic block.
+  ## Caller must position the builder at the function entry block and
+  ## populate c.declSlots fresh (initTable) before this call.
+  var decls: seq[Node] = @[]
+  collectDecls(root, decls)
+  for d in decls:
+    let kind = d.typ.kind
+    let llvmTy = llvmIntType(c, kind)
+    let slot = LLVMBuildAlloca(c.builder, llvmTy, d.declName.cstring)
+    c.declSlots[d] = slot
+
 proc isBuiltinPrint(c: CodegenCtx, n: Node): bool =
+
   ## <NOTE>#106: a call is a builtin print iff the callee is the ident
   ## `print` AND no user `@print` function exists in the module. User
   ## shadowing wins: codegen calls their `@print` instead.
@@ -422,8 +480,14 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     doAssert n.typ != nil, "codegen: decl without sema type"
     let declKind = n.typ.kind
     let llvmTy = llvmIntType(c, declKind)
-    let slot = LLVMBuildAlloca(c.builder, llvmTy, n.declName.cstring)
+    # <NOTE>#125: alloca already emitted in the entry block by
+    # hoistAllocas. Look up by AST node; only create locally if not
+    # found (test fixtures that build nkDecl by hand).
+    var slot = c.declSlots.getOrDefault(n)
+    if slot == nil:
+      slot = LLVMBuildAlloca(c.builder, llvmTy, n.declName.cstring)
     c.defineVar(n.declName, slot, llvmTy)
+
     var initVal: LLVMValueRef
     if n.declInit == nil:
       initVal = LLVMConstInt(llvmTy, 0, 0)
@@ -576,11 +640,17 @@ proc emitFnBody(c: var CodegenCtx, decl: Node) =
   LLVMPositionBuilderAtEnd(c.builder, entry)
   let savedMain = c.mainFn
   let savedRetKind = c.curFnRetKind
+  let savedSlots = c.declSlots
   c.mainFn = fnVal
   c.curFnRetKind = decl.typ.fnRet.kind
+  c.declSlots = initTable[Node, LLVMValueRef]()
+  # <NOTE>#126: hoist all local allocas into entry before params/body.
+  hoistAllocas(c, decl.declInit)
+  LLVMPositionBuilderAtEnd(c.builder, entry)
   c.scopes.add initTable[string, LLVMValueRef]()
   c.varTypes.add initTable[string, LLVMTypeRef]()
   for i, p in decl.declTypeNode.fnParams:
+
 
     let ty = llvmIntType(c, decl.typ.fnParams[i].kind)
     let paramVal = LLVMGetParam(fnVal, cuint(i))
@@ -619,7 +689,9 @@ proc emitFnBody(c: var CodegenCtx, decl: Node) =
   c.scopes.setLen(c.scopes.len - 1)
   c.varTypes.setLen(c.varTypes.len - 1)
   c.curFnRetKind = savedRetKind
+  c.declSlots = savedSlots
   c.mainFn = savedMain
+
 
 
 proc emitModule*(program: Node): string =
@@ -643,8 +715,10 @@ proc emitModule*(program: Node): string =
   var c = CodegenCtx(ctx: ctx, module: llmod, builder: builder,
                      mainFn: mainFn, i64: i64, i1: i1,
                      curFnRetKind: tyI64,
+                     declSlots: initTable[Node, LLVMValueRef](),
                      scopes: @[initTable[string, LLVMValueRef]()],
                      varTypes: @[initTable[string, LLVMTypeRef]()])
+
 
 
   # <NOTE>#93: three passes. 1: declare all fns. 2: emit fn bodies.
@@ -659,10 +733,16 @@ proc emitModule*(program: Node): string =
         emitFnBody(c, stmt)
 
   LLVMPositionBuilderAtEnd(builder, mainEntry)
+  # <NOTE>#127: hoist all main-scope allocas into mainEntry before
+  # emitting the body.
+  if program.kind == nkProgram:
+    hoistAllocas(c, program)
+    LLVMPositionBuilderAtEnd(builder, mainEntry)
   var retVal: LLVMValueRef = nil
   var retType: LidwType = nil
   if program.kind == nkProgram:
     for stmt in program.stmts:
+
       if stmt.kind == nkDecl and stmt.typ != nil and stmt.typ.kind == tyFn:
         continue
       let v = emitStmt(c, stmt)

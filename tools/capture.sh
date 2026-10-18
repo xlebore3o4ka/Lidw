@@ -39,9 +39,21 @@ _capture_on_exit() {
     sleep 0.05
   done
   if [ "$rc" -eq 0 ]; then
+    local okout
+    okout=$(printf '=== exit 0 ===\n'; cat "$_capture_tmp" 2>/dev/null)
+    local nok
+    nok=$(printf '%s\n' "$okout" | wc -l)
+    if [ -z "${LIDW_CAPTURE_FORCE_FILE:-}" ] && command -v wl-copy >/dev/null 2>&1; then
+      printf '%s\n' "$okout" | wl-copy
+      printf '\n[capture: success output (%d lines) copied to clipboard]\n' "$nok" >&3
+    elif [ -z "${LIDW_CAPTURE_FORCE_FILE:-}" ] && command -v xclip >/dev/null 2>&1; then
+      printf '%s\n' "$okout" | xclip -selection clipboard
+      printf '\n[capture: success output (%d lines) copied to clipboard]\n' "$nok" >&3
+    fi
     rm -f "$_capture_tmp"
     return 0
   fi
+
   local out=""
   out+="=== exit $rc ==="$'\n'
   out+="--- last $_capture_lines lines (stdout+stderr) ---"$'\n'

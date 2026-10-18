@@ -436,7 +436,8 @@ suite "sema":
   test "break in while ok":
     let n = sema("while 1 (break)")
     check n.stmts[0].kind == nkWhile
-    check n.stmts[0].typ.kind == tyNul
+    check n.stmts[0].typ.kind == tyBool
+
 
   test "break in nested while ok":
     let n = sema("while 1 (while 1 (break); break)")
@@ -451,22 +452,27 @@ suite "sema":
       check "unreachable statement after break" in e.msg
 
 
-  test "while statement is nul":
+  test "while yields Bool":
+
 
     let n = sema("while 1 1")
     check n.stmts[0].kind == nkWhile
-    check n.stmts[0].typ.kind == tyNul
+    check n.stmts[0].typ.kind == tyBool
+
 
   test "while cond iLit fits Bool":
     let n = sema("while 5 1")
     check n.stmts[0].kind == nkWhile
-    check n.stmts[0].typ.kind == tyNul
+    check n.stmts[0].typ.kind == tyBool
+
 
   test "while cond must fit Bool":
     check expectSema("Int x = 5 while x 1") == lekSema
 
-  test "while in expression position is parse error":
-    check expectSema("Int x = while 1 1") == lekParse
+  test "while in Int position is sema error":
+    # while parses as expression; its Bool does not fit Int.
+    check expectSema("Int x = while 1 1") == lekSema
+
 
 
 
@@ -474,7 +480,8 @@ suite "sema":
     let n = sema("Int x = 0 while x < 5 x = x + 1")
     check n.stmts.len == 2
     check n.stmts[1].kind == nkWhile
-    check n.stmts[1].typ.kind == tyNul
+    check n.stmts[1].typ.kind == tyBool
+
 
   test "cast Int to Int":
 

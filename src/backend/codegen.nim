@@ -169,8 +169,10 @@ proc toBool(c: var CodegenCtx, v: LLVMValueRef): LLVMValueRef =
 # <NOTE>#52: emitExpr needs emitStmt for nkBlock bodies; emitStmt needs
 # emitExpr for values. Forward-declare emitStmt so both can coexist.
 proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef
+proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef
 
 proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef
+
 
 # <NOTE>#105: printf is declared lazily at first builtin print. The
 # format string is a private constant global, reused across calls.
@@ -222,7 +224,24 @@ proc collectDecls(n: Node, acc: var seq[Node]) =
   else: discard
 
 
+proc hasBreak(n: Node): bool =
+  ## <NOTE>#137: does this loop body contain a `break` that targets
+  ## the current loop? Nested `while` owns its own break, do not
+  ## descend.
+  if n == nil: return false
+  case n.kind
+  of nkBreak: return true
+  of nkWhile: return false
+  of nkBlock, nkProgram:
+    for s in n.stmts:
+      if hasBreak(s): return true
+    return false
+  of nkIf:
+    return hasBreak(n.ifThen) or hasBreak(n.ifElse)
+  else: return false
+
 proc hoistAllocas(c: var CodegenCtx, root: Node) =
+
   ## Emit alloca for every collected nkDecl into the current basic block.
   ## Caller must position the builder at the function entry block and
   ## populate c.declSlots fresh (initTable) before this call.
@@ -352,8 +371,11 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
           $n.assignValue.typ.kind & " -> " & $n.typ.kind)
     discard LLVMBuildStore(c.builder, val, slot)
     val
+  of nkWhile:
+    emitWhileExpr(c, n)
   of nkCast:
     # <NOTE>#76: cast dispatch on (source kind, target kind). iLit is
+
     # folded at the target width, no IR instruction emitted. Concrete
     # Int<->Int uses coerceInt (trunc/sext/zext by source signedness).
     # Int<->Bool uses icmp-ne-zero / zext.
@@ -592,45 +614,8 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       LLVMPositionBuilderAtEnd(c.builder, mergeBB)
     nil
   of nkWhile:
-    # <NOTE>#131: canonical loop skeleton:
-    #   entry:
-    #     br cond
-    #   cond:
-    #     %c = cond()
-    #     br i1 %c, body, exit
-    #   body:
-    #     <body>
-    #     br cond
-    #   exit:
-    #     <fallthrough>
-    # `break` and `continue` (L.3/L.4) will need loop stack in ctx to
-    # know where to br. Today the body cannot break out early; only
-    # `ret` exits (which emits its own ret + terminates the block).
-    let condBB = LLVMCreateBasicBlockInContext(c.ctx, "while.cond")
-    let bodyBB = LLVMCreateBasicBlockInContext(c.ctx, "while.body")
-    let exitBB = LLVMCreateBasicBlockInContext(c.ctx, "while.exit")
-    LLVMAppendExistingBasicBlock(c.mainFn, condBB)
-    LLVMAppendExistingBasicBlock(c.mainFn, bodyBB)
-    LLVMAppendExistingBasicBlock(c.mainFn, exitBB)
-    discard LLVMBuildBr(c.builder, condBB)
-    LLVMPositionBuilderAtEnd(c.builder, condBB)
-    var cond = emitExpr(c, n.whileCond)
-    let condIsBool = n.whileCond.typ != nil and n.whileCond.typ.kind == tyBool
-    if not condIsBool:
-      cond = toBool(c, cond)
-    discard LLVMBuildCondBr(c.builder, cond, bodyBB, exitBB)
-    c.loopExits.add exitBB
-    LLVMPositionBuilderAtEnd(c.builder, bodyBB)
-    discard emitStmt(c, n.whileBody)
-    c.loopExits.setLen(c.loopExits.len - 1)
+    return emitWhileExpr(c, n)
 
-    # <NOTE>#132: if the body is terminal (e.g. always `ret`), do not
-    # append an unreachable `br cond`; LLVM rejects code after
-    # ret/unreachable in the same block.
-    if not isTerminal(n.whileBody):
-      discard LLVMBuildBr(c.builder, condBB)
-    LLVMPositionBuilderAtEnd(c.builder, exitBB)
-    nil
   of nkBreak:
     if c.loopExits.len == 0:
       raise newException(ValueError,
@@ -660,7 +645,51 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       "codegen: unsupported statement: " & $n.kind)
 
 
+proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
+  # <NOTE>#139: while returns Bool. true if the loop exited via break,
+  # false if the condition became false.
+  let brk = hasBreak(n.whileBody)
+  let condBB = LLVMCreateBasicBlockInContext(c.ctx, "while.cond")
+  let bodyBB = LLVMCreateBasicBlockInContext(c.ctx, "while.body")
+  let exitBB = LLVMCreateBasicBlockInContext(c.ctx, "while.exit")
+  var breakBB: LLVMBasicBlockRef = nil
+  if brk:
+    breakBB = LLVMCreateBasicBlockInContext(c.ctx, "while.break")
+  LLVMAppendExistingBasicBlock(c.mainFn, condBB)
+  LLVMAppendExistingBasicBlock(c.mainFn, bodyBB)
+  if brk:
+    LLVMAppendExistingBasicBlock(c.mainFn, breakBB)
+  LLVMAppendExistingBasicBlock(c.mainFn, exitBB)
+  discard LLVMBuildBr(c.builder, condBB)
+  LLVMPositionBuilderAtEnd(c.builder, condBB)
+  var cond = emitExpr(c, n.whileCond)
+  let condIsBool = n.whileCond.typ != nil and n.whileCond.typ.kind == tyBool
+  if not condIsBool:
+    cond = toBool(c, cond)
+  discard LLVMBuildCondBr(c.builder, cond, bodyBB, exitBB)
+  c.loopExits.add(if brk: breakBB else: exitBB)
+  LLVMPositionBuilderAtEnd(c.builder, bodyBB)
+  discard emitStmt(c, n.whileBody)
+  c.loopExits.setLen(c.loopExits.len - 1)
+  if not isTerminal(n.whileBody):
+    discard LLVMBuildBr(c.builder, condBB)
+  if brk:
+    LLVMPositionBuilderAtEnd(c.builder, breakBB)
+    discard LLVMBuildBr(c.builder, exitBB)
+  LLVMPositionBuilderAtEnd(c.builder, exitBB)
+  if brk:
+    let phi = LLVMBuildPhi(c.builder, c.i1, "while.result")
+    var vals: array[2, LLVMValueRef]
+    var blks: array[2, LLVMBasicBlockRef]
+    vals[0] = LLVMConstInt(c.i1, 0, 0); blks[0] = condBB
+    vals[1] = LLVMConstInt(c.i1, 1, 0); blks[1] = breakBB
+    LLVMAddIncoming(phi, addr vals[0], addr blks[0], 2)
+    phi
+  else:
+    LLVMConstInt(c.i1, 0, 0)
+
 proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef =
+
   # <NOTE>#97: mutable params are passed as `ptr`. Caller takes address
   # of its alloca; callee writes through the pointer. Immutable params
   # stay by-value.

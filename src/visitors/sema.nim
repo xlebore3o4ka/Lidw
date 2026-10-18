@@ -683,11 +683,15 @@ proc visitWhile*(v: var SemaVisitor, n: Node) =
       n.whileCond.line, n.whileCond.col)
   let saveCtx = v.ctx
   v.ctx = nil
+  # <NOTE>#136: while yields Bool. true if the loop exited via break,
+  # false if the condition became false. `break expr` (value-loops)
+  # will change the type, see TODO.md.
   inc v.curLoopDepth
   visit(v, n.whileBody)
   dec v.curLoopDepth
   v.ctx = saveCtx
-  n.typ = nulType()
+  n.typ = boolType()
+
 
 
 proc runSema*(n: Node): Node =

@@ -257,7 +257,10 @@ while x < 5 x = x + 1
 while x < 5 (x = x + 1; print(x))
 ```
 
-`while` is a statement (yields `Nul`).
+`while` is an expression. It yields `Bool`: `true` if the loop
+exited via `break`, `false` if the condition became false. Example:
+`Bool b = while x < 5 (x = x + 1; if x == 3 break)`.
+
 
 Inside a `while` body, `break` exits the innermost enclosing loop:
 

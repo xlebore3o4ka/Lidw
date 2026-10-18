@@ -62,6 +62,10 @@ proc parsePrimary(p: var Parser): Node =
   of tkIf:
     p.advance()
     result = parseIfLike(p, t)
+  of tkWhile:
+    p.advance()
+    result = parseWhileLike(p, t)
+
   of tkIs:
     p.advance()
     let val = parseExpr(p, 0)

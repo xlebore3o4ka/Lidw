@@ -19,7 +19,11 @@ it graduates to `issues/` or to a design session.
   typechecks as the value of `break expr`. Needs a `phi` in the exit
   block, same shape as `if`-value. Defer until value-loops are
   needed in real programs; the `(while ...; is result)` pattern
-  covers most cases.
+  covers most cases. When `break expr` lands, `while`'s type must
+  change: `while` containing `break expr` yields the expr's type,
+  not `Bool`; mixing `break` (bare) and `break expr` in one loop
+  should be an error.
+
 - **`for` loop.** Sugar over `while`. Needs either a `Range` type
   (`for i in 0..10`) or a LIDW-idiomatic alternative. Defer until
   Range exists.

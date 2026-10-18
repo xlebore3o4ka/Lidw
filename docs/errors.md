@@ -75,12 +75,14 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
 - `argument N must be mutable, but <name> is immutable` — mutable
   parameter received an immutable variable.
 
-### `break`
+### `break` / `continue`
 
-- `break outside loop` — `break` at program root or outside any
-  `while` body.
-- `unreachable statement after break` — statement after a terminal
-  `break` in the same block.
+- `break outside loop` / `continue outside loop` — at program root
+  or outside any `while` body.
+- `unreachable statement after break` / `unreachable statement after
+  continue` — statement after a terminal `break`/`continue` in the
+  same block.
+
 
 ### `while`
 

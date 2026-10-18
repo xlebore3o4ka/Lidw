@@ -144,7 +144,9 @@ If the body contains `break` (detected structurally), an extra
 Without `break`, no `while.break` block; exit value is constant
 `false`.
 
-`break` lowers to `br while.break`.
+`break` lowers to `br while.break`. `continue` lowers to
+`br while.cond` (the condition block).
+
 
 `ret` inside `while` exits the enclosing function and terminates the
 current block; the loop's exit block is still emitted but may be

@@ -278,8 +278,20 @@ The loop has two exit points:
   exits and the result is `false`.
 - A `break` in the body exits immediately and the result is `true`.
 
-`continue`, `break expr`, and `for` are not yet (see
+`continue` skips the rest of the current iteration and jumps to the
+next condition check:
+
+```
+Int i = 0
+Int s = 0
+while i < 5 (i = i + 1; if i == 2 continue; s = s + 1)
+-- s == 4 (i = 1, 3, 4, 5)
+```
+
+`continue` is terminal: statements after it in the same block are
+unreachable. `break expr` and `for` are not yet (see
 [TODO.md](../TODO.md)).
+
 
 
 

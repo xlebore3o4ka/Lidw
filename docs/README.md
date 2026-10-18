@@ -17,6 +17,8 @@ build actually understands.
 | `if`/`elif`/`else` |   ok   |  ok   |  partial|
 | `while`            |   ok   |  ok   |  partial|
 | `break`            |   ok   |  ok   |  partial|
+| `continue`         |   ok   |  ok   |  partial|
+
 | `is`               |   ok   |  ok   |  partial|
 
 | Narrow int types   |   ok   |  ok   |  partial|

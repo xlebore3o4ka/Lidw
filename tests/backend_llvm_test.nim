@@ -41,7 +41,7 @@ suite "llvm-c bindings":
 
   test "emitModule empty program returns 0":
     let p = Node(kind: nkProgram, stmts: @[])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "define i64 @main" in ir
     check "ret i64 0" in ir
 
@@ -49,7 +49,7 @@ suite "llvm-c bindings":
     let p = Node(kind: nkProgram, stmts: @[
       Node(kind: nkInt, intVal: 42)
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "ret i64 42" in ir
 
   test "emitModule addition constant-folds":
@@ -58,7 +58,7 @@ suite "llvm-c bindings":
         left: Node(kind: nkInt, intVal: 1),
         right: Node(kind: nkInt, intVal: 2))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     # LLVM IR builder constant-folds; no instruction survives.
     check "ret i64 3" in ir
 
@@ -67,7 +67,7 @@ suite "llvm-c bindings":
       Node(kind: nkDecl, declName: "x", typ: i64Type(),
            declInit: Node(kind: nkInt, intVal: 10))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "alloca i64" in ir
     check "store i64 10" in ir
     check "ret i64 0" in ir       # decl has no value; main returns 0
@@ -78,7 +78,7 @@ suite "llvm-c bindings":
            declInit: Node(kind: nkInt, intVal: 10)),
       Node(kind: nkIdent, identName: "x")
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "store i64 10" in ir
     check "load i64" in ir
     check "ret i64 %" in ir
@@ -87,7 +87,7 @@ suite "llvm-c bindings":
     let p = Node(kind: nkProgram, stmts: @[
       Node(kind: nkDecl, declName: "x", typ: i64Type(), declInit: nil)
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "store i64 0" in ir
 
   test "emitModule decl then add non-constant":
@@ -98,7 +98,7 @@ suite "llvm-c bindings":
         left: Node(kind: nkIdent, identName: "x"),
         right: Node(kind: nkInt, intVal: 1))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "load i64" in ir
     check "add i64 %" in ir
 
@@ -110,7 +110,7 @@ suite "llvm-c bindings":
            assignValue: Node(kind: nkInt, intVal: 5)),
       Node(kind: nkIdent, identName: "x")
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "store i64 10" in ir
     check "store i64 5" in ir
     check "load i64" in ir
@@ -121,7 +121,7 @@ suite "llvm-c bindings":
       Node(kind: nkDecl, declName: "b", typ: boolType(),
            declInit: Node(kind: nkInt, intVal: 1))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "alloca i1" in ir
     check "store i1 true" in ir
 
@@ -133,7 +133,7 @@ suite "llvm-c bindings":
            declInit: Node(kind: nkCast, typ: i64Type(), castTarget: "Int",
              castExpr: Node(kind: nkIdent, identName: "x", typ: i64Type())))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "load i64" in ir
 
   test "emitModule cast Int to Bool":
@@ -144,7 +144,7 @@ suite "llvm-c bindings":
            declInit: Node(kind: nkCast, typ: boolType(), castTarget: "Bool",
              castExpr: Node(kind: nkIdent, identName: "x", typ: i64Type())))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "icmp ne i64" in ir
 
   test "emitModule cast iLit to U8 emits at width":
@@ -153,7 +153,7 @@ suite "llvm-c bindings":
            declInit: Node(kind: nkCast, typ: u8Type(), castTarget: "U8",
              castExpr: Node(kind: nkInt, intVal: 300, typ: iLitType(300))))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "store i8" in ir
 
   test "emitModule cast Bool to Int":
@@ -164,7 +164,7 @@ suite "llvm-c bindings":
            declInit: Node(kind: nkCast, typ: i64Type(), castTarget: "Int",
              castExpr: Node(kind: nkIdent, identName: "b", typ: boolType())))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "zext i1" in ir
 
   test "emitModule narrow decl allocates i8":
@@ -172,7 +172,7 @@ suite "llvm-c bindings":
       Node(kind: nkDecl, declName: "x", typ: u8Type(),
            declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "alloca i8" in ir
     check "store i8 5" in ir
 
@@ -180,7 +180,7 @@ suite "llvm-c bindings":
     let p = Node(kind: nkProgram, stmts: @[
       Node(kind: nkDecl, declName: "b", typ: boolType(), declInit: nil)
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "store i1 false" in ir
 
   test "emitModule if statement has basic blocks":
@@ -194,7 +194,7 @@ suite "llvm-c bindings":
         ifElse: Node(kind: nkAssign, assignName: "x",
                      assignValue: Node(kind: nkInt, intVal: 7)))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "br i1" in ir
     check "br label" in ir
     check "then:" in ir
@@ -213,7 +213,7 @@ suite "llvm-c bindings":
                      assignValue: Node(kind: nkInt, intVal: 5)),
         ifElse: nil)
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "br i1" in ir
     check "then:" in ir
     check "merge:" in ir
@@ -229,7 +229,7 @@ suite "llvm-c bindings":
     let innerBlock = Node(kind: nkBlock, stmts: @[innerDecl, innerRead])
     let outerRead = Node(kind: nkIdent, identName: "x")
     let p = Node(kind: nkProgram, stmts: @[outerDecl, innerBlock, outerRead])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     # LLVM auto-suffixes duplicate names; count store instructions as
     # the ground truth for "two declarations actually emitted".
     check "store i64 1" in ir
@@ -243,7 +243,7 @@ suite "llvm-c bindings":
                   isValue: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))
            ]))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "store i64 5" in ir
 
   test "emitModule is with prior stmts in block":
@@ -256,7 +256,7 @@ suite "llvm-c bindings":
                   isValue: Node(kind: nkIdent, identName: "y", typ: i64Type()))
            ]))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "store i64 10" in ir
     check "load i64" in ir
 
@@ -276,7 +276,7 @@ suite "llvm-c bindings":
                     isValue: Node(kind: nkInt, intVal: 7, typ: iLitType(7)))
              ])))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "phi i64" in ir
 
   test "emitModule value-if produces phi":
@@ -290,7 +290,7 @@ suite "llvm-c bindings":
              ifThen: Node(kind: nkInt, intVal: 10, typ: iLitType(10)),
              ifElse: Node(kind: nkInt, intVal: 20, typ: iLitType(20))))
     ])
-    let ir = emitModule(p)
+    let ir = emitModule(p, "<expr>", false)
     check "if_phi = phi i64" in ir
 
   test "main returns 42, verifies":

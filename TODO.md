@@ -36,7 +36,17 @@ it graduates to `issues/` or to a design session.
   covers most cases.
 
 
+- **`panic()` as terminal for sema.** Today `isTerminal(nkCall)` is
+  always false; sema treats `panic()` as an ordinary `Nul()` call.
+  This means `(if x < 0 panic(); 5)` needs `is 5` to yield, and
+  `if x < 0 panic() else 5` is a sema error (one branch Nul, other
+  Int). Making `panic()` terminal in sema would allow both without
+  `is`. Options: (a) hardcode `panic` in `isTerminal` (fragile with
+  shadowing); (b) a separate `nkPanic` AST node (breaks "builtin as
+  ordinary function"); (c) a `never` return type, sema-only. Defer
+  until `panic` shows up in real programs.
 - **`for` loop.** Sugar over `while`. Needs either a `Range` type
+
   (`for i in 0..10`) or a LIDW-idiomatic alternative. Defer until
   Range exists.
 - **Implicit "last value" for `while`.** Rejected design: silently

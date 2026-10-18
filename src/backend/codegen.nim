@@ -28,6 +28,11 @@ type
     trapFn: LLVMValueRef
 
     curFnRetKind: TypeKind  ## ret kind of the fn whose body is emitted
+    # <NOTE>#182: overflow checks on signed `+ - *`. true by default.
+    overflowChecks: bool
+    # <NOTE>#183: cache for llvm.<op>.with.overflow.<iN> declarations.
+    intrinsics: Table[string, tuple[fn: LLVMValueRef, fnTy: LLVMTypeRef]]
+
     loopExits: seq[LLVMBasicBlockRef]
       ## <NOTE>#133: innermost last. `break` emits `br` to loopExits[^1].
     loopContinues: seq[LLVMBasicBlockRef]
@@ -294,6 +299,66 @@ proc ensureTrap(c: var CodegenCtx) =
   let fnTy = LLVMFunctionType(voidTy, nil, 0, 0)
   c.trapFn = LLVMAddFunction(c.module, "llvm.trap", fnTy)
 
+proc emitTrap(c: var CodegenCtx) =
+  # <NOTE>#184: emit llvm.trap + unreachable. Used by builtin panic and
+  # by overflow-check paths.
+  ensureTrap(c)
+  let voidTy = LLVMVoidTypeInContext(c.ctx)
+  let fnTy = LLVMFunctionType(voidTy, nil, 0, 0)
+  discard LLVMBuildCall2(c.builder, fnTy, c.trapFn, nil, 0, "")
+  discard LLVMBuildUnreachable(c.builder)
+
+proc ensureArithOf(c: var CodegenCtx, kind: TypeKind, op: BinOp):
+    tuple[fn: LLVMValueRef, fnTy: LLVMTypeRef] =
+  # <NOTE>#185: declare `llvm.<sadd|ssub|smul>.with.overflow.<iN>` on
+  # first use. LLVM verifies intrinsics by name + signature.
+  let opName = case op
+    of boAdd: "sadd"
+    of boSub: "ssub"
+    of boMul: "smul"
+    else:
+      raise newException(AssertionDefect,
+        "ensureArithOf: not add/sub/mul: " & opStr(op))
+  let kindName = case kind
+    of tyI8:  "i8"
+    of tyI16: "i16"
+    of tyI32: "i32"
+    of tyI64: "i64"
+    else:
+      raise newException(AssertionDefect,
+        "ensureArithOf: not signed int: " & $kind)
+  let name = "llvm." & opName & ".with.overflow." & kindName
+  if c.intrinsics.hasKey(name): return c.intrinsics[name]
+  let elTy = llvmIntType(c, kind)
+  var elems: array[2, LLVMTypeRef] = [elTy, c.i1]
+  let structTy = LLVMStructTypeInContext(c.ctx, addr elems[0], 2, 0)
+  var params: array[2, LLVMTypeRef] = [elTy, elTy]
+
+  let fnTy = LLVMFunctionType(structTy, addr params[0], 2, 0)
+  let fn = LLVMAddFunction(c.module, name.cstring, fnTy)
+  let entry = (fn, fnTy)
+  c.intrinsics[name] = entry
+  entry
+
+proc emitSignedArithOf(c: var CodegenCtx, n: Node, kind: TypeKind,
+                       lhs, rhs: LLVMValueRef): LLVMValueRef =
+  let (fn, fnTy) = ensureArithOf(c, kind, n.op)
+  var args: array[2, LLVMValueRef] = [lhs, rhs]
+  let pair = LLVMBuildCall2(c.builder, fnTy, fn, addr args[0], 2, "")
+  let v = LLVMBuildExtractValue(c.builder, pair, 0, "arith")
+  let ofv = LLVMBuildExtractValue(c.builder, pair, 1, "arith.of")
+  let panicBB = LLVMCreateBasicBlockInContext(c.ctx, "arith.panic")
+  let contBB = LLVMCreateBasicBlockInContext(c.ctx, "arith.cont")
+  LLVMAppendExistingBasicBlock(c.mainFn, panicBB)
+  LLVMAppendExistingBasicBlock(c.mainFn, contBB)
+  discard LLVMBuildCondBr(c.builder, ofv, panicBB, contBB)
+  LLVMPositionBuilderAtEnd(c.builder, panicBB)
+  setLoc(c, n)
+  emitTrap(c)
+  LLVMPositionBuilderAtEnd(c.builder, contBB)
+  v
+
+
 proc isBuiltinPanic(c: CodegenCtx, n: Node): bool =
   ## <NOTE>#174: `panic` is the builtin iff the callee is `panic` AND
   ## no user `@panic` exists. Same shadowing rule as print.
@@ -335,9 +400,17 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
       let rhs = emitOperand(c, n.right, targetKind)
       let signed = kindSigned(targetKind)
       case n.op
-      of boAdd: LLVMBuildAdd(c.builder, lhs, rhs, "add")
-      of boSub: LLVMBuildSub(c.builder, lhs, rhs, "sub")
-      of boMul: LLVMBuildMul(c.builder, lhs, rhs, "mul")
+      of boAdd, boSub, boMul:
+        # <NOTE>#186: signed add/sub/mul check for overflow; unsigned
+        # is wrap-by-design.
+        if signed and c.overflowChecks:
+          emitSignedArithOf(c, n, targetKind, lhs, rhs)
+        else:
+          case n.op
+          of boAdd: LLVMBuildAdd(c.builder, lhs, rhs, "add")
+          of boSub: LLVMBuildSub(c.builder, lhs, rhs, "sub")
+          of boMul: LLVMBuildMul(c.builder, lhs, rhs, "mul")
+          else: raise newException(ValueError, "unreachable")
       of boDiv:
         if signed: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
         else: LLVMBuildUDiv(c.builder, lhs, rhs, "div")
@@ -345,6 +418,7 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
         if signed: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
         else: LLVMBuildURem(c.builder, lhs, rhs, "rem")
       else: raise newException(ValueError, "unreachable")
+
     of boEq, boNe, boLt, boLe, boGt, boGe:
       # <NOTE>#43: comparisons operate on a common representation.
       let lIsBool = n.left.typ != nil and n.left.typ.kind == tyBool
@@ -669,15 +743,10 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     emitExpr(c, n)
   of nkCall:
     if isBuiltinPanic(c, n):
-      # <NOTE>#175: panic lowers to llvm.trap + unreachable. The
-      # trap has no operands; debug info (setLoc above) points gdb at
-      # the source line.
-      ensureTrap(c)
-      discard LLVMBuildCall2(c.builder,
-        LLVMFunctionType(LLVMVoidTypeInContext(c.ctx), nil, 0, 0),
-        c.trapFn, nil, 0, "")
-      discard LLVMBuildUnreachable(c.builder)
+      # <NOTE>#175: panic lowers to llvm.trap + unreachable.
+      emitTrap(c)
       nil
+
     elif isBuiltinPrint(c, n):
       ensurePrintf(c)
       let x = emitOperand(c, n.args[0], tyI64)
@@ -1091,7 +1160,9 @@ proc initDI(c: var CodegenCtx, llmod: LLVMModuleRef) =
     "".cstring, 0, # SysRoot
     "".cstring, 0) # SDK
 
-proc emitModule*(program: Node, sourceFile: string = "<expr>"): string =
+proc emitModule*(program: Node, sourceFile: string = "<expr>",
+                 overflowChecks: bool = true): string =
+
 
   ## Lower the program and return textual LLVM IR.
   ## <TODO>#39: temporary semantics — main returns the last value
@@ -1130,10 +1201,14 @@ proc emitModule*(program: Node, sourceFile: string = "<expr>"): string =
   var c = CodegenCtx(ctx: ctx, module: llmod, builder: builder,
                      mainFn: mainFn, i64: i64, i1: i1,
                      curFnRetKind: tyI64,
+                     overflowChecks: overflowChecks,
+                     intrinsics: initTable[string, tuple[fn: LLVMValueRef, fnTy: LLVMTypeRef]](),
+
                      sourceFile: sourceFile,
                      declSlots: initTable[Node, LLVMValueRef](),
                      scopes: @[initTable[string, LLVMValueRef]()],
                      varTypes: @[initTable[string, LLVMTypeRef]()])
+
   c.di = di
   initDI(c, llmod)
   c.diBasicTypes = initTable[TypeKind, LLVMMetadataRef]()

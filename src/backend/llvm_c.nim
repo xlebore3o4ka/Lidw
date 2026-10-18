@@ -82,6 +82,12 @@ proc LLVMFunctionType*(ReturnType: LLVMTypeRef,
                        ParamCount: cuint,
                        IsVarArg: LLVMBool): LLVMTypeRef
   {.cdecl, importc: "LLVMFunctionType".}
+proc LLVMStructTypeInContext*(C: LLVMContextRef,
+                              ElementTypes: ptr LLVMTypeRef,
+                              ElementCount: cuint,
+                              Packed: LLVMBool): LLVMTypeRef
+  {.cdecl, importc: "LLVMStructTypeInContext".}
+
 
 # --- functions ---
 proc LLVMAddFunction*(M: LLVMModuleRef, Name: cstring,
@@ -138,6 +144,10 @@ proc LLVMBuildURem*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
 proc LLVMBuildNeg*(Builder: LLVMBuilderRef, V: LLVMValueRef,
                    Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildNeg".}
+proc LLVMBuildExtractValue*(Builder: LLVMBuilderRef, AggVal: LLVMValueRef,
+                            Index: cuint, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildExtractValue".}
+
 
 # --- variables (opaque pointers, LLVM 15+) ---
 proc LLVMBuildAlloca*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,

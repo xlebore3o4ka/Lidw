@@ -65,6 +65,19 @@ proc parsePrimary(p: var Parser): Node =
   of tkWhile:
     p.advance()
     result = parseWhileLike(p, t)
+  of tkDiscard:
+    # <NOTE>#145: `discard` is usable as an expression; it always
+    # yields Nul. In statement position sema allows it (the value is
+    # thrown away anyway); in value position sema rejects (Nul does
+    # not fit). Bare `discard` when the next token cannot start an
+    # expression.
+    p.advance()
+    if p.peek().kind in {tkSemicolon, tkRParen, tkEOF, tkElse, tkElif}:
+      result = Node(kind: nkDiscard, discardExpr: nil, line: t.line, col: t.col)
+    else:
+      let e = parseExpr(p, 0)
+      result = Node(kind: nkDiscard, discardExpr: e, line: t.line, col: t.col)
+
 
   of tkIs:
     p.advance()

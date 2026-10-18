@@ -331,8 +331,18 @@ discard                -- Nul
 has no value (`discard (1 2)`). That is the primary use case:
 suppress a value without inventing a dummy `0`.
 
-`discard` is a statement, not an expression. `Int x = discard 1` is
-a parse error. `1 + discard 2` is a parse error.
+`discard` is an expression of type `Nul`. In value position sema
+rejects it because `Nul` does not fit any value type:
+
+```
+Int x = discard 1     -- sema error: initializer has type nul
+Nul(Int a$) reset = discard a = 1   -- ok: Nul body
+```
+
+This is what makes `Nul(...) f = discard expr` work: the body is a
+`discard`-expression, its type is `Nul`, and the function returns
+nothing.
+
 
 ## `ret`
 

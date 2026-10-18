@@ -348,12 +348,18 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
         argVals.add slot
       else:
         argVals.add emitOperand(c, a, fnT.fnParams[i].kind)
+    # <NOTE>#147: void calls cannot carry a name; LLVM rejects
+    # `%x = call void @f()`. Use empty name for Nul-returning calls.
+    let callName: cstring =
+      if fnT.fnRet.kind == tyNul: "" else: "call"
     let llvmFnTy = fnLLVMType(c, fnT)
     if argVals.len == 0:
-      LLVMBuildCall2(c.builder, llvmFnTy, fnVal, nil, 0, "call")
+      LLVMBuildCall2(c.builder, llvmFnTy, fnVal, nil, 0, callName)
     else:
       LLVMBuildCall2(c.builder, llvmFnTy, fnVal, addr argVals[0],
-                     cuint(argVals.len), "call")
+                     cuint(argVals.len), callName)
+
+
 
   of nkAssign:
     # <NOTE>#108: assignment as an expression. Store value, return the
@@ -380,9 +386,16 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
     val
   of nkWhile:
     emitWhileExpr(c, n)
+  of nkDiscard:
+    # <NOTE>#146: discard yields Nul. emitExpr must return an
+    # LLVMValueRef, so it cannot be called for a value. Sema should
+    # have rejected; if we got here, it is a compiler bug.
+    raise newException(ValueError,
+      "codegen: discard in value position (sema should reject)")
   of nkContinue:
     raise newException(ValueError,
       "codegen: continue in value position (sema should reject)")
+
   of nkCast:
     # <NOTE>#76: cast dispatch on (source kind, target kind). iLit is
 

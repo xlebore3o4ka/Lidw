@@ -129,6 +129,21 @@ See [overflow.md](overflow.md) for checked arithmetic and when
 `panic` fires automatically.
 
 
+### `panic()`
+
+Aborts the program via `llvm.trap`. No return value (`Nul()`). Use
+in statement position, typically as a guard:
+
+```
+Int(Int a) f = (if a < 0 panic(); is a)
+```
+
+`panic` is a builtin symbol in the root scope. User declarations
+shadow it (codegen calls the user's `panic` instead of the trap).
+See [overflow.md](overflow.md) for checked arithmetic and when
+`panic` fires automatically.
+
+
 ## Not yet supported
 
 - `return` for early exit.

@@ -47,6 +47,8 @@ marked *ok* because there is nothing for them to do.
 - [expressions.md](expressions.md) — operators, if, is
 - [overflow.md](overflow.md) — panic, checked arithmetic
 
+- [overflow.md](overflow.md) — panic, checked arithmetic
+
 - [blocks.md](blocks.md) — grouping, blocks, scope
 - [codegen.md](codegen.md) — LLVM IR emission
 - [debug.md](debug.md) — DWARF, gdb, native binaries

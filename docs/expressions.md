@@ -65,6 +65,13 @@ unsigned kinds, `+ - *` wrap silently; `/ %` still check for zero.
 See [overflow.md](overflow.md).
 
 
+**Runtime checks.** On signed integer kinds (`i8/i16/i32/i64`),
+`+ - *` check for overflow and call `panic` on overflow. `/` and
+`%` check for zero (always) and for `INT_MIN / -1` (signed). On
+unsigned kinds, `+ - *` wrap silently; `/ %` still check for zero.
+See [overflow.md](overflow.md).
+
+
 Under a declared context (`Int x = ...`), the top-level expression is
 checked against the expected type. Folding still happens for literals:
 `Int x = 1 + 2` gives `x : Int` initialized by `iLit(3)`, not by

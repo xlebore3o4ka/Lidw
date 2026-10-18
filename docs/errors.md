@@ -160,7 +160,21 @@ debug info (see [debug.md](debug.md)).
 
 No `panic` is thrown for unsigned `+ - *` overflow; that wraps.
 
+## Runtime panics
+
+These are not `LidwError`. They abort the process via `llvm.trap`
+(SIGILL). Each one is traceable to a source line through DWARF
+debug info (see [debug.md](debug.md)).
+
+- `panic()` — explicit. The trap is at the source line of `panic()`.
+- `+ - *` on signed integers overflow — the trap is at the operator.
+- `/ %` by zero — trap at the operator.
+- `/ %` on signed `INT_MIN` and `-1` — trap at the operator.
+
+No `panic` is thrown for unsigned `+ - *` overflow; that wraps.
+
 ## Internal errors
+
 
 
 These are not `LidwError`. They indicate bugs in the compiler

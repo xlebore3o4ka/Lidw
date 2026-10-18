@@ -75,7 +75,30 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
 - `argument N must be mutable, but <name> is immutable` — mutable
   parameter received an immutable variable.
 
+### `while`
+
+- `while condition has type <type>, expected Bool` — the condition
+  does not fit `Bool`.
+
+### `ret`
+
+- `ret outside function; use `is` to yield from a block, or declare
+  a function with a return type` — `ret` at program root or in a
+  plain block.
+- `ret value has type <got>, expected <type>` — value does not fit
+  the return type.
+- `unreachable statement after ret` — statement after a terminal
+  `ret` in the same block.
+- `unreachable statement after if` — statement after an `if` whose
+  every branch returns.
+- `ret in if branch used as value; use a block with `is`, or make
+  both branches ret` — mixing `ret` and yield in a value-context
+  `if`.
+- `Nul is a return-only type; use it only as a function return type`
+  — `Nul x = ...`.
+
 ### `if`
+
 
 - `if condition has type <type>, expected Bool` — `Int c = 1; if c ...`.
 - `if branch yields <type>, expected <type>` — under declaration

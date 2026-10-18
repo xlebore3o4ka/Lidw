@@ -239,7 +239,40 @@ Int x = (Int y = 10; is y)         -- x = y
 (names don't collide with outer block) and returns the value of
 `is`. See [codegen.md](codegen.md).
 
+## `while`
+
+`while cond body` repeats `body` while `cond` fits `Bool`.
+
+```
+Int x = 0
+while x < 5 x = x + 1
+-- x == 5
+```
+
+The body follows the `if`-branch rule: without parens it is one
+statement; with parens it is a block:
+
+```
+while x < 5 x = x + 1
+while x < 5 (x = x + 1; print(x))
+```
+
+`while` is a statement (yields `Nul`). `break` is supported inside
+the body; `continue`, `break expr`, and `for` are not yet (see
+[TODO.md](../TODO.md)).
+
+`ret` inside a `while` exits the enclosing function, not the loop.
+
+## `ret`
+
+`ret` exits the current function. It is a statement, not an
+expression. `ret expr` returns a value; bare `ret` returns the
+default of the return type (`0`, `false`, or nothing for `Nul`).
+See [return.md](return.md). Use `is` (not `ret`) to yield from a
+block.
+
 ## Grouping
+
 
 `( expr )` groups:
 

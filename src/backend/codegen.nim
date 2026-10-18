@@ -588,6 +588,43 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     if mergeBB != nil:
       LLVMPositionBuilderAtEnd(c.builder, mergeBB)
     nil
+  of nkWhile:
+    # <NOTE>#131: canonical loop skeleton:
+    #   entry:
+    #     br cond
+    #   cond:
+    #     %c = cond()
+    #     br i1 %c, body, exit
+    #   body:
+    #     <body>
+    #     br cond
+    #   exit:
+    #     <fallthrough>
+    # `break` and `continue` (L.3/L.4) will need loop stack in ctx to
+    # know where to br. Today the body cannot break out early; only
+    # `ret` exits (which emits its own ret + terminates the block).
+    let condBB = LLVMCreateBasicBlockInContext(c.ctx, "while.cond")
+    let bodyBB = LLVMCreateBasicBlockInContext(c.ctx, "while.body")
+    let exitBB = LLVMCreateBasicBlockInContext(c.ctx, "while.exit")
+    LLVMAppendExistingBasicBlock(c.mainFn, condBB)
+    LLVMAppendExistingBasicBlock(c.mainFn, bodyBB)
+    LLVMAppendExistingBasicBlock(c.mainFn, exitBB)
+    discard LLVMBuildBr(c.builder, condBB)
+    LLVMPositionBuilderAtEnd(c.builder, condBB)
+    var cond = emitExpr(c, n.whileCond)
+    let condIsBool = n.whileCond.typ != nil and n.whileCond.typ.kind == tyBool
+    if not condIsBool:
+      cond = toBool(c, cond)
+    discard LLVMBuildCondBr(c.builder, cond, bodyBB, exitBB)
+    LLVMPositionBuilderAtEnd(c.builder, bodyBB)
+    discard emitStmt(c, n.whileBody)
+    # <NOTE>#132: if the body is terminal (e.g. always `ret`), do not
+    # append an unreachable `br cond`; LLVM rejects code after
+    # ret/unreachable in the same block.
+    if not isTerminal(n.whileBody):
+      discard LLVMBuildBr(c.builder, condBB)
+    LLVMPositionBuilderAtEnd(c.builder, exitBB)
+    nil
   of nkRet:
     # <NOTE>#114: bare `ret` returns the default of the current fn's
     # return kind (0 for ints, false for Bool).
@@ -603,6 +640,7 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
           LLVMConstInt(llvmIntType(c, c.curFnRetKind), 0, 0)
       discard LLVMBuildRet(c.builder, v)
     nil
+
 
   else:
     raise newException(ValueError,

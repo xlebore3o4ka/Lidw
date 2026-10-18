@@ -147,6 +147,10 @@ proc LLVMBuildNeg*(Builder: LLVMBuilderRef, V: LLVMValueRef,
 proc LLVMBuildExtractValue*(Builder: LLVMBuilderRef, AggVal: LLVMValueRef,
                             Index: cuint, Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildExtractValue".}
+proc LLVMBuildAnd*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                   Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildAnd".}
+
 
 
 # --- variables (opaque pointers, LLVM 15+) ---

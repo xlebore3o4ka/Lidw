@@ -340,8 +340,52 @@ proc ensureArithOf(c: var CodegenCtx, kind: TypeKind, op: BinOp):
   c.intrinsics[name] = entry
   entry
 
+proc emitDivChecked(c: var CodegenCtx, n: Node, kind: TypeKind,
+                    lhs, rhs: LLVMValueRef, isRem: bool): LLVMValueRef =
+  # <NOTE>#187: div/mod checks:
+  #  - rhs == 0 → panic (always, signed and unsigned)
+  #  - signed only: lhs == INT_MIN and rhs == -1 → panic. LLVM sdiv/srem
+  #    is UB on this input.
+  let elTy = llvmIntType(c, kind)
+  let zero = LLVMConstInt(elTy, 0, 0)
+  let isZero = LLVMBuildICmp(c.builder, LLVMIntEQ, rhs, zero, "div.zero")
+  let panic1BB = LLVMCreateBasicBlockInContext(c.ctx, "div.panic1")
+  let ok1BB = LLVMCreateBasicBlockInContext(c.ctx, "div.ok1")
+  LLVMAppendExistingBasicBlock(c.mainFn, panic1BB)
+  LLVMAppendExistingBasicBlock(c.mainFn, ok1BB)
+  discard LLVMBuildCondBr(c.builder, isZero, panic1BB, ok1BB)
+  LLVMPositionBuilderAtEnd(c.builder, panic1BB)
+  setLoc(c, n)
+  emitTrap(c)
+  LLVMPositionBuilderAtEnd(c.builder, ok1BB)
+  let signed = kindSigned(kind)
+  var safeLhs = lhs
+  var safeRhs = rhs
+  if signed:
+    let minVal = LLVMConstInt(elTy, cast[culonglong](low(int64)), 0)
+    let negOne = LLVMConstInt(elTy, cast[culonglong](-1), 0)
+    let isMin = LLVMBuildICmp(c.builder, LLVMIntEQ, lhs, minVal, "div.min")
+    let isNeg1 = LLVMBuildICmp(c.builder, LLVMIntEQ, rhs, negOne, "div.neg1")
+    let isBad = LLVMBuildAnd(c.builder, isMin, isNeg1, "div.bad")
+    let panic2BB = LLVMCreateBasicBlockInContext(c.ctx, "div.panic2")
+    let ok2BB = LLVMCreateBasicBlockInContext(c.ctx, "div.ok2")
+    LLVMAppendExistingBasicBlock(c.mainFn, panic2BB)
+    LLVMAppendExistingBasicBlock(c.mainFn, ok2BB)
+    discard LLVMBuildCondBr(c.builder, isBad, panic2BB, ok2BB)
+    LLVMPositionBuilderAtEnd(c.builder, panic2BB)
+    setLoc(c, n)
+    emitTrap(c)
+    LLVMPositionBuilderAtEnd(c.builder, ok2BB)
+  if isRem:
+    if signed: LLVMBuildSRem(c.builder, safeLhs, safeRhs, "rem")
+    else: LLVMBuildURem(c.builder, safeLhs, safeRhs, "rem")
+  else:
+    if signed: LLVMBuildSDiv(c.builder, safeLhs, safeRhs, "div")
+    else: LLVMBuildUDiv(c.builder, safeLhs, safeRhs, "div")
+
 proc emitSignedArithOf(c: var CodegenCtx, n: Node, kind: TypeKind,
                        lhs, rhs: LLVMValueRef): LLVMValueRef =
+
   let (fn, fnTy) = ensureArithOf(c, kind, n.op)
   var args: array[2, LLVMValueRef] = [lhs, rhs]
   let pair = LLVMBuildCall2(c.builder, fnTy, fn, addr args[0], 2, "")
@@ -412,11 +456,20 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
           of boMul: LLVMBuildMul(c.builder, lhs, rhs, "mul")
           else: raise newException(ValueError, "unreachable")
       of boDiv:
-        if signed: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
-        else: LLVMBuildUDiv(c.builder, lhs, rhs, "div")
+        # <NOTE>#188: div/mod always check rhs != 0; signed also checks
+        # INT_MIN / -1 (UB in LLVM sdiv/srem).
+        if c.overflowChecks:
+          emitDivChecked(c, n, targetKind, lhs, rhs, isRem = false)
+        else:
+          if signed: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
+          else: LLVMBuildUDiv(c.builder, lhs, rhs, "div")
       of boMod:
-        if signed: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
-        else: LLVMBuildURem(c.builder, lhs, rhs, "rem")
+        if c.overflowChecks:
+          emitDivChecked(c, n, targetKind, lhs, rhs, isRem = true)
+        else:
+          if signed: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
+          else: LLVMBuildURem(c.builder, lhs, rhs, "rem")
+
       else: raise newException(ValueError, "unreachable")
 
     of boEq, boNe, boLt, boLe, boGt, boGe:

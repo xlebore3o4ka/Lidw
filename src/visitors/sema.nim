@@ -50,6 +50,8 @@ proc visitFnType*(v: var SemaVisitor, n: Node)
 proc visitParam*(v: var SemaVisitor, n: Node)
 proc visitCall*(v: var SemaVisitor, n: Node)
 proc visitRet*(v: var SemaVisitor, n: Node)
+proc visitWhile*(v: var SemaVisitor, n: Node)
+
 
 
 proc visitTypeNode*(v: var SemaVisitor, n: Node): LidwType =
@@ -654,7 +656,25 @@ proc visitRet*(v: var SemaVisitor, n: Node) =
         n.retExpr.line, n.retExpr.col)
   n.typ = v.curRetType
 
+proc visitWhile*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#130: cond fits Bool. Body is a statement (nil ctx).
+  # `while` yields Nul; value-loops via `break expr` are deferred.
+  let outerCtx = v.ctx
+  v.ctx = nil
+  visit(v, n.whileCond)
+  v.ctx = outerCtx
+  if not fits(n.whileCond.typ, boolType()):
+    raise lidwError(lekSema,
+      "while condition has type " & $n.whileCond.typ & ", expected Bool",
+      n.whileCond.line, n.whileCond.col)
+  let saveCtx = v.ctx
+  v.ctx = nil
+  visit(v, n.whileBody)
+  v.ctx = saveCtx
+  n.typ = nulType()
+
 proc runSema*(n: Node): Node =
+
 
   ## Run sema on n; types set in-place, n returned.
   # <NOTE>#32: no root context — program root is a statement block.

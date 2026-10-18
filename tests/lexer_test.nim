@@ -194,7 +194,13 @@ suite "lexer":
     check ts[1].kind == tkComma
     check ts[3].kind == tkEOF
 
+  test "while is a keyword":
+    check lexAll("while")[0].kind == tkWhile
+    check lexAll("While")[0].kind == tkType
+    check lexAll("whiles")[0].kind == tkIdent
+
   test "as is a keyword":
+
     check lexAll("as")[0].kind == tkAs
     check lexAll("As")[0].kind == tkType
 

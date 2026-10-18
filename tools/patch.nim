@@ -70,20 +70,27 @@ proc parse(input: string): seq[Patch] =
   result = patches
 
 proc apply(p: Patch) =
+  # <NOTE>#130: OLD wins over the "already applied" check. Only if OLD
+  # is not in the file, and NEW (stripped) is present, do we assume a
+  # previous run already applied this patch. Otherwise it's a hard
+  # error. This fixes the case where NEW is empty (delete) — an empty
+  # NEW is always "in" any string, so an OLD-first order is required.
   let s = readFile(p.file)
-  if p.new.len > 0 and p.new in s:
+  let idx = s.find(p.old)
+  if idx >= 0:
+    writeFile(p.file, s[0 ..< idx] & p.new & s[idx + p.old.len .. ^1])
+    echo "patched: ", p.file, " (", p.marker, ")"
+    return
+  if p.new.strip.len > 0 and p.new in s:
     echo "skip: ", p.file, " (", p.marker, ") already applied"
     return
-  let idx = s.find(p.old)
-  if idx < 0:
-    stderr.writeLine "patch: block not found in " & p.file &
-                     " (marker " & p.marker & ")"
-    stderr.writeLine "--- looked for ---"
-    stderr.writeLine p.old
-    stderr.writeLine "--- end ---"
-    quit(1)
-  writeFile(p.file, s[0 ..< idx] & p.new & s[idx + p.old.len .. ^1])
-  echo "patched: ", p.file, " (", p.marker, ")"
+  stderr.writeLine "patch: block not found in " & p.file &
+                   " (marker " & p.marker & ")"
+  stderr.writeLine "--- looked for ---"
+  stderr.writeLine p.old
+  stderr.writeLine "--- end ---"
+  quit(1)
+
 
 proc main() =
   let input = stdin.readAll()

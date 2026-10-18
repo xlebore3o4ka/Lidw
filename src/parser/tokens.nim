@@ -31,7 +31,9 @@ type
     tkAs         ## as (cast)
     tkComma      ## ,
     tkRet        ## ret (early return)
+    tkWhile      ## while
     tkEOF        ## end of input
+
 
 
   Token* = object
@@ -73,5 +75,7 @@ proc `$`*(t: Token): string =
     of tkAs:      "tkAs"
     of tkComma:   "tkComma"
     of tkRet:     "tkRet"
+    of tkWhile:   "tkWhile"
     of tkEOF:     "tkEOF"
+
 

@@ -276,6 +276,30 @@ suite "parser":
     check expectParse("x as") == lekParse
     check expectParse("x as 5") == lekParse
 
+  test "while parses":
+    let n = p("while 1 1")
+    check n.stmts.len == 1
+    check n.stmts[0].kind == nkWhile
+    check n.stmts[0].whileCond.kind == nkInt
+    check n.stmts[0].whileBody.kind == nkInt
+
+  test "while with block body":
+    let n = p("while 1 (1; 2)")
+    check n.stmts[0].kind == nkWhile
+    check n.stmts[0].whileBody.kind == nkBlock
+    check n.stmts[0].whileBody.stmts.len == 2
+
+  test "while body without parens is one stmt":
+    let n = p("while 1 x = 5 x")
+    check n.stmts.len == 2
+    check n.stmts[0].kind == nkWhile
+    check n.stmts[0].whileBody.kind == nkAssign
+    check n.stmts[1].kind == nkIdent
+
+  test "while without body is parse error":
+    check expectParse("while 1") == lekParse
+
   test "if branch without body is parse error":
+
     check expectParse("if 1") == lekParse
     check expectParse("if 1 1 else") == lekParse

@@ -20,6 +20,8 @@ type
     nkTypeName, nkFnType, nkParam
     nkCall
     nkRet
+    nkWhile
+
 
 
   Node* = ref object
@@ -73,6 +75,10 @@ type
       args*: seq[Node]
     of nkRet:
       retExpr*: Node       ## nil for bare `ret` (return default)
+    of nkWhile:
+      whileCond*: Node
+      whileBody*: Node
+
 
 
 proc opStr*(o: BinOp): string =
@@ -212,6 +218,13 @@ proc render(n: Node, depth: int): string =
     else:
       pad & "ret @" & $n.line & ":" & $n.col & ts & "\n" &
         render(n.retExpr, depth + 1)
+  of nkWhile:
+    var parts: seq[string] = @[]
+    parts.add pad & "while @" & $n.line & ":" & $n.col & ts
+    parts.add pad & "  cond:" & "\n" & render(n.whileCond, depth + 2)
+    parts.add pad & "  body:" & "\n" & render(n.whileBody, depth + 2)
+    parts.join("\n")
+
 
 
 proc `$`*(n: Node): string = render(n, 0)

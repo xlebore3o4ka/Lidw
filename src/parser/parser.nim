@@ -40,6 +40,8 @@ proc binOpFrom(kind: TokenKind): BinOp =
 proc parseExpr(p: var Parser, minPrec: int): Node
 proc parseStmt(p: var Parser): Node
 proc parseIfLike(p: var Parser, tok: Token): Node
+proc parseWhileLike(p: var Parser, tok: Token): Node
+
 
 proc parsePrimary(p: var Parser): Node =
   let t = p.peek()
@@ -311,6 +313,16 @@ proc parseIfLike(p: var Parser, tok: Token): Node =
   Node(kind: nkIf, ifCond: cond, ifThen: thenBr, ifElse: elseBr,
        line: tok.line, col: tok.col)
 
+# <NOTE>#129: while cond body. Body follows the if-branch rule: one
+# statement without parens, or an explicit `( ... )` block. `while`
+# is a statement (yields Nul); `break expr` for value-loops is
+# deferred (see TODO.md).
+proc parseWhileLike(p: var Parser, tok: Token): Node =
+  let cond = parseExpr(p, 0)
+  let body = parseBodyNode(p, "while", tok.line, tok.col)
+  Node(kind: nkWhile, whileCond: cond, whileBody: body,
+       line: tok.line, col: tok.col)
+
 proc parseStmt(p: var Parser): Node =
   let t = p.peek()
   if t.kind == tkType:
@@ -318,8 +330,12 @@ proc parseStmt(p: var Parser): Node =
   elif t.kind == tkIf:
     p.advance()
     parseIfLike(p, t)
+  elif t.kind == tkWhile:
+    p.advance()
+    parseWhileLike(p, t)
   else:
     parseExpr(p, 0)
+
 
 proc parseProgram*(tokens: seq[Token]): Node =
   var p = Parser(tokens: tokens, pos: 0)

@@ -430,7 +430,32 @@ suite "sema":
   test "assign immutable rejected in fn body":
     check expectSema("Int(Int a) f = a = 1") == lekSema
 
+  test "while statement is nul":
+    let n = sema("while 1 1")
+    check n.stmts[0].kind == nkWhile
+    check n.stmts[0].typ.kind == tyNul
+
+  test "while cond iLit fits Bool":
+    let n = sema("while 5 1")
+    check n.stmts[0].kind == nkWhile
+    check n.stmts[0].typ.kind == tyNul
+
+  test "while cond must fit Bool":
+    check expectSema("Int x = 5 while x 1") == lekSema
+
+  test "while in expression position is parse error":
+    check expectSema("Int x = while 1 1") == lekParse
+
+
+
+  test "while with assignment body typechecks":
+    let n = sema("Int x = 0 while x < 5 x = x + 1")
+    check n.stmts.len == 2
+    check n.stmts[1].kind == nkWhile
+    check n.stmts[1].typ.kind == tyNul
+
   test "cast Int to Int":
+
     let n = sema("Int x = 5 Int y = x as Int")
     check n.stmts[1].declInit.kind == nkCast
     check n.stmts[1].declInit.typ.kind == tyI64

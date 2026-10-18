@@ -16,6 +16,42 @@ lidw build '1 + 2' | lli
 `lli` executes the IR directly. Because `main` returns the value
 described below, the shell `$?` gives you that number (mod 256).
 
+To compile to a native binary and use `gdb`:
+
+```
+lidw build test.lidw | clang -x ir - -o test -g -O0
+./test
+gdb test
+```
+
+See [debug.md](debug.md).
+
+## Target
+
+At module start, `initTarget` sets:
+
+- `target triple` from `LLVMGetDefaultTargetTriple` (host triple,
+  e.g. `x86_64-pc-linux-gnu`).
+- `target datalayout` hardcoded to the x86-64 SysV layout
+  `e-m:e-p270:...:64-S128`. This makes `store i64` emit `align 8`
+  (not `align 4`) and eliminates `clang`'s `-Woverride-module`.
+
+Cross-compilation is not supported; see
+[issues/001](../issues/001-llvm-target-triple.md).
+
+## Debug info
+
+Every module carries DWARF v5:
+
+- `DICompileUnit` (language C, producer `lidw <version>`), `DIFile`.
+- `DISubprogram` per function; `DILocation` on each instruction.
+- `DILocalVariable` + `dbg.declare` for every local.
+
+`lli` ignores this. `clang -g` turns it into `.debug_info`; `gdb`
+then understands source lines and variable names. Full guide in
+[debug.md](debug.md).
+
+
 ## Temporary semantics
 
 **`main` returns the last value expression.** This is a scaffold

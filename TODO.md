@@ -3,6 +3,30 @@
 Not bugs, not committed plans. If any of these becomes important,
 it graduates to `issues/` or to a design session.
 
+- **`s$` as reference alias, not a no-op mutability marker.** Today
+  `Int b$ = a` is just an explicit-mutable declaration (`muMutable`,
+  same as bare `Int b`); it allocates a fresh slot and copies. The
+  intended semantics is a **reference alias** to an existing
+  variable:
+
+  ```
+  Int a = 10
+  Int b$ = a
+  b = 5
+  print(a)   -- 5
+  ```
+
+  Rules sketched: RHS must be a mutable lvalue (ident bound to a
+  mutable variable; eventually also a call whose return type is
+  mutable). Codegen: `alloca ptr`, `store @a`, all `b` reads and
+  writes go through the pointer. `b` has type `Int` but no storage
+  of its own; rebinding `b` (`b = c`) either writes through or is
+  disallowed (TBD). Interaction with shadowing, `break`/`continue`
+  inside loops, and passing `b` to `$`-params needs design. Defer
+  until pointers and aliasing are on the table; keep `$` as an
+  explicit-mutable marker for now.
+
+
 
 - **`break expr` for value-loops.** `while` yields `Bool` today
   (`true` = break, `false` = cond-false). `break expr` would make

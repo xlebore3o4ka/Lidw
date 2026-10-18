@@ -37,7 +37,12 @@ type
     di: LLVMDIBuilderRef
     diFile: LLVMMetadataRef
     diCU: LLVMMetadataRef
+    diScope: seq[LLVMMetadataRef]
+      ## <NOTE>#153: CU -> SUBPROGRAM stack. Top is current scope for
+      ## DILocation / DISubprogram creation.
+    diBasicTypes: Table[TypeKind, LLVMMetadataRef]
     sourceFile: string
+
     declSlots: Table[Node, LLVMValueRef]
 
 
@@ -184,8 +189,13 @@ proc toBool(c: var CodegenCtx, v: LLVMValueRef): LLVMValueRef =
 # emitExpr for values. Forward-declare emitStmt so both can coexist.
 proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef
 proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef
+proc diSubprogram(c: var CodegenCtx, name: string, line: int,
+                  fnT: LidwType): LLVMMetadataRef
+proc setLoc(c: var CodegenCtx, n: Node)
 
 proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef
+
+
 
 
 # <NOTE>#105: printf is declared lazily at first builtin print. The
@@ -280,9 +290,13 @@ proc isBuiltinPrint(c: CodegenCtx, n: Node): bool =
     LLVMGetNamedFunction(c.module, "print".cstring) == nil
 
 proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
+  # <NOTE>#159: every instruction gets a !dbg from the node it comes
+  # from. Set at entry; recursive calls reset for their own nodes.
+  setLoc(c, n)
   case n.kind
   of nkInt:
     LLVMConstInt(c.i64, cast[culonglong](n.intVal), 0)
+
   of nkUnary:
     case n.unop
     of uoNeg:
@@ -534,7 +548,9 @@ proc emitOperand(c: var CodegenCtx, n: Node,
 proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   ## Emits one statement. Returns the value expression if n is a value
   ## expr (for main's return), nil for declarative statements.
+  setLoc(c, n)
   case n.kind
+
   of nkDecl:
     # <NOTE>#82: fn decls are emitted by emitFn (pass 1 of emitModule),
     # not as statements. Return nil here.
@@ -778,9 +794,13 @@ proc emitFnBody(c: var CodegenCtx, decl: Node) =
   c.mainFn = fnVal
   c.curFnRetKind = decl.typ.fnRet.kind
   c.declSlots = initTable[Node, LLVMValueRef]()
+  let fnSP = diSubprogram(c, decl.declName, decl.line, decl.typ)
+  LLVMSetSubprogram(fnVal, fnSP)
+  c.diScope.add fnSP
   # <NOTE>#126: hoist all local allocas into entry before params/body.
   hoistAllocas(c, decl.declInit)
   LLVMPositionBuilderAtEnd(c.builder, entry)
+
   c.scopes.add initTable[string, LLVMValueRef]()
   c.varTypes.add initTable[string, LLVMTypeRef]()
   for i, p in decl.declTypeNode.fnParams:
@@ -825,10 +845,86 @@ proc emitFnBody(c: var CodegenCtx, decl: Node) =
   c.curFnRetKind = savedRetKind
   c.declSlots = savedSlots
   c.mainFn = savedMain
+  c.diScope.setLen(c.diScope.len - 1)
 
 
+
+
+proc diIntKind(k: TypeKind): tuple[name: string, bits: int, enc: cint] =
+  case k
+  of tyI8:  ("i8",  8,  LLVMDWATEsigned)
+  of tyU8:  ("u8",  8,  LLVMDWATEunsigned)
+  of tyI16: ("i16", 16, LLVMDWATEsigned)
+  of tyU16: ("u16", 16, LLVMDWATEunsigned)
+  of tyI32: ("i32", 32, LLVMDWATEsigned)
+  of tyU32: ("u32", 32, LLVMDWATEunsigned)
+  of tyI64: ("i64", 64, LLVMDWATEsigned)
+  of tyU64: ("u64", 64, LLVMDWATEunsigned)
+  of tyBool: ("Bool", 8, LLVMDWATEboolean)
+  of tyILit: ("iLit", 64, LLVMDWATEsigned)
+  else:
+    raise newException(AssertionDefect,
+      "diIntKind: not an int/bool kind: " & $k)
+
+proc diBasicType(c: var CodegenCtx, k: TypeKind): LLVMMetadataRef =
+  if c.diBasicTypes.hasKey(k):
+    return c.diBasicTypes[k]
+  # <NOTE>#154: iLit is not a real type; map to i64 in DI.
+  let info = diIntKind(k)
+  let m = LLVMDIBuilderCreateBasicType(c.di,
+    info.name.cstring, csize_t(info.name.len),
+    culonglong(info.bits), culonglong(info.bits),
+    cuint(info.enc))
+  c.diBasicTypes[k] = m
+  m
+
+proc diSubroutineType(c: var CodegenCtx, fnT: LidwType): LLVMMetadataRef =
+  ## <NOTE>#155: D.1b: param DI type is the value type, not `ptr` for
+  ## mutable params. `DIDerivedType(pointer)` lands in D.1b fix-up.
+  var paramTypes: seq[LLVMMetadataRef] = @[]
+  # First element is the return type; nil for void.
+  if fnT.fnRet.kind == tyNul:
+    paramTypes.add nil
+  else:
+    paramTypes.add diBasicType(c, fnT.fnRet.kind)
+  for pt in fnT.fnParams:
+    paramTypes.add diBasicType(c, pt.kind)
+  let arr = if paramTypes.len == 0: nil else: addr paramTypes[0]
+  LLVMDIBuilderCreateSubroutineType(c.di, c.diFile,
+    arr, cuint(paramTypes.len), 0)
+
+proc diSubprogram(c: var CodegenCtx, name: string, line: int,
+                  fnT: LidwType): LLVMMetadataRef =
+  let subT = diSubroutineType(c, fnT)
+  let nameC = name.cstring
+  LLVMDIBuilderCreateFunction(c.di,
+    c.diCU,                          # scope
+    nameC, csize_t(name.len),        # name
+    nameC, csize_t(name.len),        # linkage name
+    c.diFile,
+    cuint(max(line, 1)),
+    subT,
+    0, 1,                            # isLocalToUnit, isDefinition
+    cuint(max(line, 1)),             # scopeLine
+    0, 0)                            # flags, isOptimized
+
+
+proc setLoc(c: var CodegenCtx, n: Node) =
+  ## <NOTE>#158: attach !dbg to the next emitted instruction(s). Scope
+  ## is the innermost DISubprogram (top of c.diScope, which is main
+  ## until emitFnBody pushes a fn scope). Line/col from n; line 1 col
+  ## 1 fallback if n is nil or has zero.
+  if c.di == nil or c.diScope.len == 0: return
+  if n == nil: return
+  let line = if n.line > 0: cuint(n.line) else: 1.cuint
+  let col = if n.col > 0: cuint(n.col) else: 1.cuint
+  let scope = c.diScope[^1]
+  let loc = LLVMDIBuilderCreateDebugLocation(c.ctx, line, col, scope, nil)
+  LLVMSetCurrentDebugLocation2(c.builder, loc)
 
 proc initDI(c: var CodegenCtx, llmod: LLVMModuleRef) =
+
+
   ## <NOTE>#149: minimal DI. DICompileUnit + DIFile at module scope.
   ## No DISubprogram, no DILocation yet — that is D.1b/c.
   c.di = LLVMCreateDIBuilder(llmod)
@@ -883,6 +979,15 @@ proc emitModule*(program: Node, sourceFile: string = "<expr>"): string =
                      varTypes: @[initTable[string, LLVMTypeRef]()])
   c.di = di
   initDI(c, llmod)
+  c.diBasicTypes = initTable[TypeKind, LLVMMetadataRef]()
+  c.diScope = @[c.diCU]
+  # <NOTE>#156: main DISubprogram. Register before appending the entry
+  # basic block so any DILocation inside sees the right scope.
+  let mainT = fnType(i64Type(), @[], @[])
+  let mainSP = diSubprogram(c, "main", 1, mainT)
+  LLVMSetSubprogram(mainFn, mainSP)
+  c.diScope.add mainSP
+
 
 
 
@@ -927,7 +1032,13 @@ proc emitModule*(program: Node, sourceFile: string = "<expr>"): string =
         retVal = LLVMBuildSExt(builder, retVal, i64, "ret_sext")
       else:
         retVal = LLVMBuildZExt(builder, retVal, i64, "ret_zext")
+  # <NOTE>#160: setLoc BEFORE the final ret so the ret has main's
+  # scope, not the last fn emitted by pass 2 (which left a stale
+  # current debug location on the builder).
+  setLoc(c, if program.kind == nkProgram and program.stmts.len > 0:
+              program.stmts[^1] else: nil)
   discard LLVMBuildRet(builder, retVal)
+
 
   # <NOTE>#150: finalize DI before verify/print so !llvm.dbg.cu appears
   # in the output. DI without DISubprogram/DILocation is valid.

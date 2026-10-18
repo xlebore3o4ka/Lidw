@@ -240,7 +240,52 @@ proc LLVMDIBuilderCreateCompileUnit*(Builder: LLVMDIBuilderRef,
                                      SDK: cstring, SDKLen: csize_t): LLVMMetadataRef
   {.cdecl, importc: "LLVMDIBuilderCreateCompileUnit".}
 
+proc LLVMDIBuilderCreateBasicType*(Builder: LLVMDIBuilderRef,
+                                   Name: cstring, NameLen: csize_t,
+                                   SizeInBits: culonglong,
+                                   AlignInBits: culonglong,
+                                   Encoding: cuint): LLVMMetadataRef
+  {.cdecl, importc: "LLVMDIBuilderCreateBasicType".}
+proc LLVMDIBuilderCreateSubroutineType*(Builder: LLVMDIBuilderRef,
+                                        File: LLVMMetadataRef,
+                                        ParameterTypes: ptr LLVMMetadataRef,
+                                        NumParameterTypes: cuint,
+                                        Flags: cint): LLVMMetadataRef
+  {.cdecl, importc: "LLVMDIBuilderCreateSubroutineType".}
+# <NOTE>#157: LLVM 15+ signature: Name is cstring, not metadata.
+# Earlier versions had it as LLVMMetadataRef; we target LLVM 23.
+proc LLVMDIBuilderCreateFunction*(Builder: LLVMDIBuilderRef,
+                                  Scope: LLVMMetadataRef,
+                                  Name: cstring, NameLen: csize_t,
+                                  LinkageName: cstring, LinkageNameLen: csize_t,
+                                  File: LLVMMetadataRef,
+                                  LineNo: cuint,
+                                  Ty: LLVMMetadataRef,
+                                  IsLocalToUnit, IsDefinition: LLVMBool,
+                                  ScopeLine: cuint, Flags: cint,
+                                  IsOptimized: LLVMBool): LLVMMetadataRef
+  {.cdecl, importc: "LLVMDIBuilderCreateFunction".}
+
+proc LLVMSetSubprogram*(Fn: LLVMValueRef, SP: LLVMMetadataRef)
+  {.cdecl, importc: "LLVMSetSubprogram".}
+
+# <NOTE>#152: LLVM C API uses cint/cuint for DWARF constants.
+# DW_ATE_signed = 0x05, DW_ATE_unsigned = 0x07, DW_ATE_boolean = 0x02.
+const
+  LLVMDWATEsigned* = 0x05.cint
+  LLVMDWATEunsigned* = 0x07.cint
+  LLVMDWATEboolean* = 0x02.cint
+
+proc LLVMDIBuilderCreateDebugLocation*(Ctx: LLVMContextRef,
+                                       Line, Column: cuint,
+                                       Scope, InlinedAt: LLVMMetadataRef): LLVMMetadataRef
+  {.cdecl, importc: "LLVMDIBuilderCreateDebugLocation".}
+proc LLVMSetCurrentDebugLocation2*(Builder: LLVMBuilderRef, Loc: LLVMMetadataRef)
+  {.cdecl, importc: "LLVMSetCurrentDebugLocation2".}
+
 # --- verification ---
+
+
 
 proc LLVMVerifyModule*(M: LLVMModuleRef,
                        Action: LLVMVerifierFailureAction,

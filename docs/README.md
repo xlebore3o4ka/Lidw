@@ -48,9 +48,14 @@ marked *ok* because there is nothing for them to do.
 ## Tools
 
 ```
-lidw parse '<src>'   # token stream with positions
-lidw ast   '<src>'   # AST (no types)
-lidw check '<src>'   # typed AST (sema)
-lidw build '<src>'   # LLVM IR text (sema + codegen)
-lidw --version       # version from VERSION file
+lidw parse <expr|file>   # token stream with positions
+lidw ast   <expr|file>   # AST (no types)
+lidw check <expr|file>   # typed AST (sema)
+lidw build <expr|file>   # LLVM IR text (sema + codegen)
+lidw --version           # version from VERSION file
 ```
+
+`<expr>` is LIDW source quoted in the shell. `<file>` is a path to
+an existing file: its contents are read as LIDW source. Detection:
+if the argument names an existing regular file, contents are used;
+otherwise the argument itself is the source. No extension check.

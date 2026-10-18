@@ -47,7 +47,9 @@ marked *ok* because there is nothing for them to do.
 - [expressions.md](expressions.md) — operators, if, is
 - [blocks.md](blocks.md) — grouping, blocks, scope
 - [codegen.md](codegen.md) — LLVM IR emission
+- [debug.md](debug.md) — DWARF, gdb, native binaries
 - [errors.md](errors.md) — error kinds and messages
+
 - [planned.md](planned.md) — not started
 
 ## Tools

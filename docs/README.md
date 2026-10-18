@@ -18,6 +18,8 @@ build actually understands.
 | `while`            |   ok   |  ok   |  partial|
 | `break`            |   ok   |  ok   |  partial|
 | `continue`         |   ok   |  ok   |  partial|
+| `discard`          |   ok   |  ok   |  partial|
+
 
 | `is`               |   ok   |  ok   |  partial|
 

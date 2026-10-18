@@ -315,7 +315,27 @@ callable. Proper adjacency fix for `(` is tracked in `TODO.md`.
 `ret` inside a `while` exits the enclosing function, not the loop.
 
 
+## `discard`
+
+`discard expr` evaluates `expr` for side effects and yields `Nul`.
+`discard` (no expr) is a no-op that yields `Nul`.
+
+```
+discard 1 + 2          -- Nul; the value is thrown away
+discard f(5)           -- Nul; side effects run
+discard (Int x = 1; x) -- Nul; block evaluated, result dropped
+discard                -- Nul
+```
+
+`discard` accepts any expression, including a statement block that
+has no value (`discard (1 2)`). That is the primary use case:
+suppress a value without inventing a dummy `0`.
+
+`discard` is a statement, not an expression. `Int x = discard 1` is
+a parse error. `1 + discard 2` is a parse error.
+
 ## `ret`
+
 
 `ret` exits the current function. It is a statement, not an
 expression. `ret expr` returns a value; bare `ret` returns the

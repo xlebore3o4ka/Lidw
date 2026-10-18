@@ -55,6 +55,8 @@ proc visitRet*(v: var SemaVisitor, n: Node)
 proc visitWhile*(v: var SemaVisitor, n: Node)
 proc visitBreak*(v: var SemaVisitor, n: Node)
 proc visitContinue*(v: var SemaVisitor, n: Node)
+proc visitDiscard*(v: var SemaVisitor, n: Node)
+
 
 
 
@@ -663,7 +665,19 @@ proc visitContinue*(v: var SemaVisitor, n: Node) =
       "continue outside loop", n.line, n.col)
   n.typ = nulType()
 
+proc visitDiscard*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#142: discard evaluates expr for effect, yields Nul.
+  # No value-position check on expr: even a block with no value
+  # (e.g. `discard (1 2)`) is fine — the whole point is to ignore.
+  if n.discardExpr != nil:
+    let saveCtx = v.ctx
+    v.ctx = nil
+    visit(v, n.discardExpr)
+    v.ctx = saveCtx
+  n.typ = nulType()
+
 proc visitRet*(v: var SemaVisitor, n: Node) =
+
 
 
   # <NOTE>#111: ret is only valid inside a function body. Outside,

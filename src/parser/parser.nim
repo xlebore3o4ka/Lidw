@@ -343,8 +343,18 @@ proc parseStmt(p: var Parser): Node =
   elif t.kind == tkContinue:
     p.advance()
     Node(kind: nkContinue, line: t.line, col: t.col)
+  elif t.kind == tkDiscard:
+    p.advance()
+    # <NOTE>#141: discard is a statement. Bare `discard` when the next
+    # token cannot start an expression. Otherwise `discard expr`.
+    if p.peek().kind in {tkSemicolon, tkRParen, tkEOF, tkElse, tkElif}:
+      Node(kind: nkDiscard, discardExpr: nil, line: t.line, col: t.col)
+    else:
+      let e = parseExpr(p, 0)
+      Node(kind: nkDiscard, discardExpr: e, line: t.line, col: t.col)
   else:
     parseExpr(p, 0)
+
 
 
 

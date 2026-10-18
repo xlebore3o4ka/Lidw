@@ -23,6 +23,8 @@ type
     nkWhile
     nkBreak
     nkContinue
+    nkDiscard
+
 
 
 
@@ -84,6 +86,9 @@ type
       whileBody*: Node
     of nkBreak: discard
     of nkContinue: discard
+    of nkDiscard:
+      discardExpr*: Node       ## nil for bare `discard`
+
 
 
 
@@ -240,6 +245,13 @@ proc render(n: Node, depth: int): string =
     pad & "break @" & $n.line & ":" & $n.col & ts
   of nkContinue:
     pad & "continue @" & $n.line & ":" & $n.col & ts
+  of nkDiscard:
+    if n.discardExpr == nil:
+      pad & "discard @" & $n.line & ":" & $n.col & ts
+    else:
+      pad & "discard @" & $n.line & ":" & $n.col & ts & "\n" &
+        render(n.discardExpr, depth + 1)
+
 
 
 

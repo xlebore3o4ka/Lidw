@@ -34,7 +34,9 @@ type
     tkWhile      ## while
     tkBreak      ## break
     tkContinue   ## continue
+    tkDiscard    ## discard
     tkEOF        ## end of input
+
 
 
 
@@ -82,7 +84,9 @@ proc `$`*(t: Token): string =
     of tkWhile:   "tkWhile"
     of tkBreak:   "tkBreak"
     of tkContinue: "tkContinue"
+    of tkDiscard:  "tkDiscard"
     of tkEOF:     "tkEOF"
+
 
 
 

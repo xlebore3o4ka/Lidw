@@ -93,7 +93,14 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
   target or discard the result in statement position.
 
 
+### `discard`
+
+`discard` is a statement; `Int x = discard ...` is a parse error
+(`unexpected token: tkDiscard`). Use `discard` at statement level,
+or drop the leading `discard` if you actually want the value.
+
 ### `ret`
+
 
 - `ret outside function; use `is` to yield from a block, or declare
   a function with a return type` — `ret` at program root or in a

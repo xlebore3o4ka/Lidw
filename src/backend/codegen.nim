@@ -225,7 +225,10 @@ proc collectDecls(n: Node, acc: var seq[Node]) =
     collectDecls(n.isValue, acc)
   of nkRet:
     if n.retExpr != nil: collectDecls(n.retExpr, acc)
+  of nkDiscard:
+    if n.discardExpr != nil: collectDecls(n.discardExpr, acc)
   else: discard
+
 
 
 proc hasBreak(n: Node): bool =
@@ -494,9 +497,13 @@ proc emitOperand(c: var CodegenCtx, n: Node,
   # <NOTE>#74: iLit operands are emitted directly at the target width
   # (sema already folded the value). Concrete operands emit at their
   # own width, then coerce.
+  # <NOTE>#144: iLit target means "no width context" (e.g. discard 1+2,
+  # where the folded 3 goes nowhere). Default to i64.
+  let tk = if targetKind == tyILit: tyI64 else: targetKind
   if n.typ != nil and n.typ.kind == tyILit:
-    return LLVMConstInt(llvmIntType(c, targetKind),
+    return LLVMConstInt(llvmIntType(c, tk),
                         cast[culonglong](n.typ.value), 0)
+
   let v = emitExpr(c, n)
   if n.typ == nil: return v  # defensive; sema should have set typ
   coerceInt(c, v, n.typ.kind, targetKind)
@@ -636,6 +643,12 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
         "codegen: continue outside loop (sema should reject)")
     discard LLVMBuildBr(c.builder, c.loopContinues[^1])
     nil
+  of nkDiscard:
+    # <NOTE>#143: discard evaluates expr for effect and returns nil.
+    if n.discardExpr != nil:
+      discard emitExpr(c, n.discardExpr)
+    nil
+
 
   of nkRet:
     # <NOTE>#114: bare `ret` returns the default of the current fn's

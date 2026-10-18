@@ -15,7 +15,10 @@ build actually understands.
 | Mutability         |   ok   |  ok   |  partial|
 | Blocks & scope     |   ok   |  ok   |  partial|
 | `if`/`elif`/`else` |   ok   |  ok   |  partial|
+| `while`            |   ok   |  ok   |  partial|
+| `break`            |   ok   |  ok   |  partial|
 | `is`               |   ok   |  ok   |  partial|
+
 | Narrow int types   |   ok   |  ok   |  partial|
 | Cast (`as`)        |   ok   |  ok   |  partial|
 | Functions          |   ok   |  ok   |  partial|

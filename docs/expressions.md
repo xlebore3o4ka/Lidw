@@ -258,8 +258,29 @@ while x < 5 (x = x + 1; print(x))
 ```
 
 `while` is an expression. It yields `Bool`: `true` if the loop
-exited via `break`, `false` if the condition became false. Example:
-`Bool b = while x < 5 (x = x + 1; if x == 3 break)`.
+exited via `break`, `false` if the condition became false.
+
+```
+Bool b = while x < 5 (x = x + 1; if x == 3 break)  -- b == true
+Bool b = while x < 5 x = x + 1                     -- b == false
+```
+
+In statement position (no `ctx`), the `Bool` is discarded:
+
+```
+while x < 5 x = x + 1
+```
+
+The loop has two exit points:
+
+- The condition is evaluated before each iteration. If it does not
+  fit `Bool`, sema rejects. If it evaluates to false, the loop
+  exits and the result is `false`.
+- A `break` in the body exits immediately and the result is `true`.
+
+`continue`, `break expr`, and `for` are not yet (see
+[TODO.md](../TODO.md)).
+
 
 
 Inside a `while` body, `break` exits the innermost enclosing loop:

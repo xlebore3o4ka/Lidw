@@ -84,9 +84,12 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
 
 ### `while`
 
-
 - `while condition has type <type>, expected Bool` — the condition
   does not fit `Bool`.
+- `initializer of <name> has type Bool, expected <type>` —
+  `Int x = while ...` where the loop yields `Bool`. Use a `Bool`
+  target or discard the result in statement position.
+
 
 ### `ret`
 

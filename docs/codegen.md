@@ -135,7 +135,23 @@ Lowered by (source kind, target kind):
 - `Bool -> Int`: `zext i1 to iN`.
 - `Bool -> Bool`: passthrough.
 
+### `while` and `break`
+
+`while` lowers to `while.cond` / `while.body` / `while.exit` blocks.
+If the body contains `break` (detected structurally), an extra
+`while.break` block collects all `break` sites. Exit emits
+`phi i1`: `false` from `while.cond`, `true` from `while.break`.
+Without `break`, no `while.break` block; exit value is constant
+`false`.
+
+`break` lowers to `br while.break`.
+
+`ret` inside `while` exits the enclosing function and terminates the
+current block; the loop's exit block is still emitted but may be
+unreachable if every body path ends in `ret`.
+
 ### Functions
+
 
 Declarations: `define iN @f(iN %0, ...)`. Each function is
 registered as a declaration first (pass 1), then bodies are emitted

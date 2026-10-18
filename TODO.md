@@ -3,26 +3,14 @@
 Not bugs, not committed plans. If any of these becomes important,
 it graduates to `issues/` or to a design session.
 
-- **Adjacency for `(`: `f(x)` is a call, `f (x)` is not.** Today
-  `parseCall` fires on any callable expr followed by `(`, so
-  `if j > i (break)` parses as `if j > (i(break))` — a call on `i`
-  with a `break` argument, parse error. Workaround: drop parens
-  around the if-body (`if j > i break`) or avoid ending the
-  condition with a callable. Proper fix: lexer records
-  `precededBySpace` per token; `parseCall` requires no space between
-  callee and `(`. Matches adjacency rules for `!=`/`! =` and
-  comments.
 
+- **`break expr` for value-loops.** `while` yields `Bool` today
+  (`true` = break, `false` = cond-false). `break expr` would make
+  the loop yield `expr`'s type when any branch uses `break expr`,
+  and reject mixing bare `break` with `break expr` in one loop.
+  Defer until value-loops are needed; `(while ...; is result)`
+  covers most cases.
 
-- **`break expr` for value-loops.** `while` is a statement (yields
-  `Nul`) today. To make it an expression: `while cond (if x; break x)`
-  typechecks as the value of `break expr`. Needs a `phi` in the exit
-  block, same shape as `if`-value. Defer until value-loops are
-  needed in real programs; the `(while ...; is result)` pattern
-  covers most cases. When `break expr` lands, `while`'s type must
-  change: `while` containing `break expr` yields the expr's type,
-  not `Bool`; mixing `break` (bare) and `break expr` in one loop
-  should be an error.
 
 - **`for` loop.** Sugar over `while`. Needs either a `Range` type
   (`for i in 0..10`) or a LIDW-idiomatic alternative. Defer until

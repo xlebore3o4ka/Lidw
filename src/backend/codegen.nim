@@ -24,6 +24,9 @@ type
     printfFn: LLVMValueRef
     printfTy: LLVMTypeRef
     printfFmt: LLVMValueRef
+    # <NOTE>#173: llvm.trap is declared lazily on first panic.
+    trapFn: LLVMValueRef
+
     curFnRetKind: TypeKind  ## ret kind of the fn whose body is emitted
     loopExits: seq[LLVMBasicBlockRef]
       ## <NOTE>#133: innermost last. `break` emits `br` to loopExits[^1].
@@ -192,8 +195,10 @@ proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef
 proc diSubprogram(c: var CodegenCtx, name: string, line: int,
                   fnT: LidwType): LLVMMetadataRef
 proc setLoc(c: var CodegenCtx, n: Node)
+proc blockTerminated(c: CodegenCtx): bool
 proc diBasicType(c: var CodegenCtx, k: TypeKind): LLVMMetadataRef
 proc diIntKind(k: TypeKind): tuple[name: string, bits: int, enc: cint]
+
 
 proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef
 
@@ -283,7 +288,21 @@ proc hoistAllocas(c: var CodegenCtx, root: Node) =
     let slot = LLVMBuildAlloca(c.builder, llvmTy, d.declName.cstring)
     c.declSlots[d] = slot
 
+proc ensureTrap(c: var CodegenCtx) =
+  if c.trapFn != nil: return
+  let voidTy = LLVMVoidTypeInContext(c.ctx)
+  let fnTy = LLVMFunctionType(voidTy, nil, 0, 0)
+  c.trapFn = LLVMAddFunction(c.module, "llvm.trap", fnTy)
+
+proc isBuiltinPanic(c: CodegenCtx, n: Node): bool =
+  ## <NOTE>#174: `panic` is the builtin iff the callee is `panic` AND
+  ## no user `@panic` exists. Same shadowing rule as print.
+  n.kind == nkCall and n.callee.kind == nkIdent and
+    n.callee.identName == "panic" and
+    LLVMGetNamedFunction(c.module, "panic".cstring) == nil
+
 proc isBuiltinPrint(c: CodegenCtx, n: Node): bool =
+
 
   ## <NOTE>#106: a call is a builtin print iff the callee is the ident
   ## `print` AND no user `@print` function exists in the module. User
@@ -349,6 +368,10 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
     if isBuiltinPrint(c, n):
       raise newException(ValueError,
         "codegen: builtin print used in value position (sema should reject)")
+    if isBuiltinPanic(c, n):
+      raise newException(ValueError,
+        "codegen: builtin panic used in value position (sema should reject)")
+
     # <NOTE>#91: callee is nkIdent (fn-as-value is out of scope in v1).
     # Args are coerced to each parameter's kind; ret type is n.typ.
     if n.callee.kind != nkIdent:
@@ -510,7 +533,10 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
     var thenVal = emitExpr(c, n.ifThen)
     if llvmTy == c.i1 and not (n.ifThen.typ != nil and n.ifThen.typ.kind == tyBool):
       thenVal = toBool(c, thenVal)
-    discard LLVMBuildBr(c.builder, mergeBB)
+    # <NOTE>#181: if branch terminated (panic), no br + no phi incoming.
+    let thenTerm = blockTerminated(c)
+    if not thenTerm:
+      discard LLVMBuildBr(c.builder, mergeBB)
     LLVMPositionBuilderAtEnd(c.builder, elseBB)
     var elseVal: LLVMValueRef
     if n.ifElse != nil:
@@ -519,8 +545,25 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
         elseVal = toBool(c, elseVal)
     else:
       elseVal = LLVMConstInt(llvmTy, 0, 0)
-    discard LLVMBuildBr(c.builder, mergeBB)
+    let elseTerm = blockTerminated(c)
+    if not elseTerm:
+      discard LLVMBuildBr(c.builder, mergeBB)
     LLVMPositionBuilderAtEnd(c.builder, mergeBB)
+    # <NOTE>#181: phi needs incoming from non-terminated branches only.
+    # At least one side is non-terminated (sema rejects all-terminal
+    # if in value position? if both terminal, n.typ was nul and we
+    # did not enter this path). Keep it simple: phi from both if
+    # neither terminated; this path is only reached when at least one
+    # side falls through, but a robust phi needs the exact live preds.
+    # For now: if a branch terminated, phi has one incoming from the
+    # other branch, but that branch also terminates → whole if is
+    # terminal. Sema should have marked n.typ = nul then; the guard
+    # above prevents entry. Fall back to LLVMValueRef(nil) is unsafe;
+    # assume both non-terminated (sema contract).
+    if thenTerm or elseTerm:
+      raise newException(ValueError,
+        "codegen: value-if with terminated branch (sema should reject)")
+
     let phi = LLVMBuildPhi(c.builder, llvmTy, "if_phi")
     var vals: array[2, LLVMValueRef]
     var blks: array[2, LLVMBasicBlockRef]
@@ -625,7 +668,17 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   of nkInt, nkIdent, nkUnary, nkBinOp, nkCast:
     emitExpr(c, n)
   of nkCall:
-    if isBuiltinPrint(c, n):
+    if isBuiltinPanic(c, n):
+      # <NOTE>#175: panic lowers to llvm.trap + unreachable. The
+      # trap has no operands; debug info (setLoc above) points gdb at
+      # the source line.
+      ensureTrap(c)
+      discard LLVMBuildCall2(c.builder,
+        LLVMFunctionType(LLVMVoidTypeInContext(c.ctx), nil, 0, 0),
+        c.trapFn, nil, 0, "")
+      discard LLVMBuildUnreachable(c.builder)
+      nil
+    elif isBuiltinPrint(c, n):
       ensurePrintf(c)
       let x = emitOperand(c, n.args[0], tyI64)
       var args: array[2, LLVMValueRef] = [c.printfFmt, x]
@@ -636,6 +689,7 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       let v = emitExpr(c, n)
       # <NOTE>#119: a nul-returning call as a statement has no value.
       if n.typ != nil and n.typ.kind == tyNul: nil else: v
+
 
   of nkBlock:
     # <NOTE>#51: value-block delegates to emitExpr so `is` yields.
@@ -650,7 +704,10 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       if v != nil: lastVal = v
       # <NOTE>#113: statements after a terminal statement are dead;
       # stop emitting (LLVM would reject the dead code otherwise).
-      if isTerminal(s): break
+      # <NOTE>#178: check the block terminator too, because builtin
+      # panic emits unreachable without sema knowing.
+      if isTerminal(s) or blockTerminated(c): break
+
     c.scopes.setLen(c.scopes.len - 1)
     c.varTypes.setLen(c.varTypes.len - 1)
     lastVal
@@ -685,16 +742,18 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     discard LLVMBuildCondBr(c.builder, cond, thenBB, elseTarget)
     LLVMPositionBuilderAtEnd(c.builder, thenBB)
     discard emitStmt(c, n.ifThen)
-    if not isTerminal(n.ifThen) and mergeBB != nil:
+    # <NOTE>#180: check blockTerminated (panic emits unreachable) too.
+    if not isTerminal(n.ifThen) and not blockTerminated(c) and mergeBB != nil:
       discard LLVMBuildBr(c.builder, mergeBB)
     if hasElse:
       LLVMPositionBuilderAtEnd(c.builder, elseBB)
       discard emitStmt(c, n.ifElse)
-      if not isTerminal(n.ifElse) and mergeBB != nil:
+      if not isTerminal(n.ifElse) and not blockTerminated(c) and mergeBB != nil:
         discard LLVMBuildBr(c.builder, mergeBB)
     if mergeBB != nil:
       LLVMPositionBuilderAtEnd(c.builder, mergeBB)
     nil
+
   of nkWhile:
     return emitWhileExpr(c, n)
 
@@ -769,8 +828,11 @@ proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   c.loopContinues.setLen(c.loopContinues.len - 1)
   c.loopExits.setLen(c.loopExits.len - 1)
 
-  if not isTerminal(n.whileBody):
+  # <NOTE>#179: blockTerminated covers panic in the body, which is
+  # not visible to isTerminal.
+  if not blockTerminated(c) and not isTerminal(n.whileBody):
     discard LLVMBuildBr(c.builder, condBB)
+
   if brk:
     LLVMPositionBuilderAtEnd(c.builder, breakBB)
     discard LLVMBuildBr(c.builder, exitBB)
@@ -853,20 +915,25 @@ proc emitFnBody(c: var CodegenCtx, decl: Node) =
   #  - nul body (statement body): emit as statement, then implicit ret
   #    default of fn's return kind (or ret void for Nul fns).
   #  - value body: emit as expression, ret the value.
+  # <NOTE>#177: if the body already terminated (panic), do not append
+  # another terminator.
   if isTerminal(decl.declInit):
     discard emitStmt(c, decl.declInit)
   elif decl.declInit.typ != nil and decl.declInit.typ.kind == tyNul:
     discard emitStmt(c, decl.declInit)
-    if decl.typ.fnRet.kind == tyNul:
-      discard LLVMBuildRetVoid(c.builder)
-    else:
-      let defaultVal =
-        if decl.typ.fnRet.kind == tyBool: LLVMConstInt(c.i1, 0, 0)
-        else: LLVMConstInt(llvmIntType(c, decl.typ.fnRet.kind), 0, 0)
-      discard LLVMBuildRet(c.builder, defaultVal)
+    if not blockTerminated(c):
+      if decl.typ.fnRet.kind == tyNul:
+        discard LLVMBuildRetVoid(c.builder)
+      else:
+        let defaultVal =
+          if decl.typ.fnRet.kind == tyBool: LLVMConstInt(c.i1, 0, 0)
+          else: LLVMConstInt(llvmIntType(c, decl.typ.fnRet.kind), 0, 0)
+        discard LLVMBuildRet(c.builder, defaultVal)
   else:
     let bodyVal = emitExpr(c, decl.declInit)
-    discard LLVMBuildRet(c.builder, bodyVal)
+    if not blockTerminated(c):
+      discard LLVMBuildRet(c.builder, bodyVal)
+
 
   c.scopes.setLen(c.scopes.len - 1)
   c.varTypes.setLen(c.varTypes.len - 1)
@@ -938,7 +1005,17 @@ proc diSubprogram(c: var CodegenCtx, name: string, line: int,
     0, 0)                            # flags, isOptimized
 
 
+proc blockTerminated(c: CodegenCtx): bool =
+  ## <NOTE>#176: true if the current basic block already has a
+  ## terminator (ret, br, unreachable). Needed because builtin panic
+  ## emits `unreachable` directly and sema's isTerminal does not see
+  ## it (we deliberately do not teach sema about builtin names).
+  let bb = LLVMGetInsertBlock(c.builder)
+  if bb == nil: return true
+  LLVMGetBasicBlockTerminator(bb) != nil
+
 proc setLoc(c: var CodegenCtx, n: Node) =
+
   ## <NOTE>#158: attach !dbg to the next emitted instruction(s). Scope
   ## is the innermost DISubprogram (top of c.diScope, which is main
   ## until emitFnBody pushes a fn scope). Line/col from n; line 1 col
@@ -1121,9 +1198,14 @@ proc emitModule*(program: Node, sourceFile: string = "<expr>"): string =
   # <NOTE>#160: setLoc BEFORE the final ret so the ret has main's
   # scope, not the last fn emitted by pass 2 (which left a stale
   # current debug location on the builder).
-  setLoc(c, if program.kind == nkProgram and program.stmts.len > 0:
-              program.stmts[^1] else: nil)
-  discard LLVMBuildRet(builder, retVal)
+  # <NOTE>#177: if the body already terminated (e.g. `panic()` as the
+  # last statement emitted llvm.trap + unreachable), do not append a
+  # second terminator.
+  if not blockTerminated(c):
+    setLoc(c, if program.kind == nkProgram and program.stmts.len > 0:
+                program.stmts[^1] else: nil)
+    discard LLVMBuildRet(builder, retVal)
+
 
 
   # <NOTE>#150: finalize DI before verify/print so !llvm.dbg.cu appears

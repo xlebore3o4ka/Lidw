@@ -26,6 +26,12 @@ proc installBuiltins(s: var Symbols) =
   ## valid in statement position (sema rejects it in value contexts).
   s.define("print", fnType(nulType(), @[i64Type()], @[muImmutable]),
            muImmutable, 0, 0)
+  # <NOTE>#172: panic is a builtin `Nul()`. Codegen lowers it to
+  # llvm.trap + unreachable; no `@panic` symbol is emitted unless the
+  # user shadows it.
+  s.define("panic", fnType(nulType(), @[], @[]),
+           muImmutable, 0, 0)
+
 
 proc newSemaVisitor*(ctx: LidwType = nil): SemaVisitor =
   result.ctx = ctx

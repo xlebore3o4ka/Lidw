@@ -94,6 +94,9 @@ proc LLVMPositionBuilderAtEnd*(Builder: LLVMBuilderRef, Block: LLVMBasicBlockRef
   {.cdecl, importc: "LLVMPositionBuilderAtEnd".}
 proc LLVMGetInsertBlock*(Builder: LLVMBuilderRef): LLVMBasicBlockRef
   {.cdecl, importc: "LLVMGetInsertBlock".}
+proc LLVMGetBasicBlockTerminator*(BB: LLVMBasicBlockRef): LLVMValueRef
+  {.cdecl, importc: "LLVMGetBasicBlockTerminator".}
+
 
 
 # --- values ---
@@ -238,6 +241,9 @@ proc LLVMBuildCall2*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,
                      Fn: LLVMValueRef, Args: ptr LLVMValueRef,
                      NumArgs: cuint, Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildCall2".}
+proc LLVMBuildUnreachable*(Builder: LLVMBuilderRef): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildUnreachable".}
+
 
 
 # --- module flags ---

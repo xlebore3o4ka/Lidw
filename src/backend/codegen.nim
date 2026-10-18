@@ -901,8 +901,9 @@ proc diBasicType(c: var CodegenCtx, k: TypeKind): LLVMMetadataRef =
   let info = diIntKind(k)
   let m = LLVMDIBuilderCreateBasicType(c.di,
     info.name.cstring, csize_t(info.name.len),
-    culonglong(info.bits), culonglong(info.bits),
-    cuint(info.enc))
+    culonglong(info.bits), cuint(info.enc), 0)
+
+
   c.diBasicTypes[k] = m
   m
 
@@ -1055,9 +1056,15 @@ proc emitModule*(program: Node, sourceFile: string = "<expr>"): string =
   LLVMPositionBuilderAtEnd(builder, mainEntry)
   # <NOTE>#127: hoist all main-scope allocas into mainEntry before
   # emitting the body.
+  # <NOTE>#166: pass 2 left a stale current debug location (last fn's
+  # scope) on the builder. Reset to nil so hoistAllocas' allocas do
+  # not inherit a foreign subprogram's scope; LLVM verify rejects
+  # `!dbg` from the wrong subprogram.
+  LLVMSetCurrentDebugLocation2(builder, nil)
   if program.kind == nkProgram:
     hoistAllocas(c, program)
     LLVMPositionBuilderAtEnd(builder, mainEntry)
+
   var retVal: LLVMValueRef = nil
   var retType: LidwType = nil
   if program.kind == nkProgram:

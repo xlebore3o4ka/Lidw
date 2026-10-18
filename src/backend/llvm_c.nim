@@ -261,12 +261,18 @@ proc LLVMDIBuilderCreateCompileUnit*(Builder: LLVMDIBuilderRef,
                                      SDK: cstring, SDKLen: csize_t): LLVMMetadataRef
   {.cdecl, importc: "LLVMDIBuilderCreateCompileUnit".}
 
+# <NOTE>#167: LLVM 23 C signature:
+#   CreateBasicType(Builder, Name, NameLen, SizeInBits, Encoding, Flags)
+# There is no AlignInBits parameter. LLVMDWARFTypeEncoding and
+# LLVMDIFlags are both uint32 in C.
 proc LLVMDIBuilderCreateBasicType*(Builder: LLVMDIBuilderRef,
                                    Name: cstring, NameLen: csize_t,
                                    SizeInBits: culonglong,
-                                   AlignInBits: culonglong,
-                                   Encoding: cuint): LLVMMetadataRef
+                                   Encoding: cuint,
+                                   Flags: cuint): LLVMMetadataRef
   {.cdecl, importc: "LLVMDIBuilderCreateBasicType".}
+
+
 proc LLVMDIBuilderCreateSubroutineType*(Builder: LLVMDIBuilderRef,
                                         File: LLVMMetadataRef,
                                         ParameterTypes: ptr LLVMMetadataRef,

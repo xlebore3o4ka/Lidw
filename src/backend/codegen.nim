@@ -25,6 +25,10 @@ type
     curFnRetKind: TypeKind  ## ret kind of the fn whose body is emitted
     loopExits: seq[LLVMBasicBlockRef]
       ## <NOTE>#133: innermost last. `break` emits `br` to loopExits[^1].
+    loopContinues: seq[LLVMBasicBlockRef]
+      ## <NOTE>#140: innermost last. `continue` emits `br` to
+      ## loopContinues[^1] (the condition block).
+
     declSlots: Table[Node, LLVMValueRef]
 
       ## <NOTE>#123: alloca is hoisted to the function entry block so
@@ -373,8 +377,12 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
     val
   of nkWhile:
     emitWhileExpr(c, n)
+  of nkContinue:
+    raise newException(ValueError,
+      "codegen: continue in value position (sema should reject)")
   of nkCast:
     # <NOTE>#76: cast dispatch on (source kind, target kind). iLit is
+
 
     # folded at the target width, no IR instruction emitted. Concrete
     # Int<->Int uses coerceInt (trunc/sext/zext by source signedness).
@@ -622,6 +630,13 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
         "codegen: break outside loop (sema should reject)")
     discard LLVMBuildBr(c.builder, c.loopExits[^1])
     nil
+  of nkContinue:
+    if c.loopContinues.len == 0:
+      raise newException(ValueError,
+        "codegen: continue outside loop (sema should reject)")
+    discard LLVMBuildBr(c.builder, c.loopContinues[^1])
+    nil
+
   of nkRet:
     # <NOTE>#114: bare `ret` returns the default of the current fn's
 
@@ -668,9 +683,12 @@ proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
     cond = toBool(c, cond)
   discard LLVMBuildCondBr(c.builder, cond, bodyBB, exitBB)
   c.loopExits.add(if brk: breakBB else: exitBB)
+  c.loopContinues.add condBB
   LLVMPositionBuilderAtEnd(c.builder, bodyBB)
   discard emitStmt(c, n.whileBody)
+  c.loopContinues.setLen(c.loopContinues.len - 1)
   c.loopExits.setLen(c.loopExits.len - 1)
+
   if not isTerminal(n.whileBody):
     discard LLVMBuildBr(c.builder, condBB)
   if brk:

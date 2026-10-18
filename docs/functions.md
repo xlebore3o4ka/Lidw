@@ -114,6 +114,21 @@ otherwise the call is lowered to `printf("%ld\n", x)`.
 `Bool`, use `print(b as Int)` (0 or 1). For narrow ints, use
 `print(x as Int)`. Strings do not exist.
 
+### `panic()`
+
+Aborts the program via `llvm.trap`. No return value (`Nul()`). Use
+in statement position, typically as a guard:
+
+```
+Int(Int a) f = (if a < 0 panic(); is a)
+```
+
+`panic` is a builtin symbol in the root scope. User declarations
+shadow it (codegen calls the user's `panic` instead of the trap).
+See [overflow.md](overflow.md) for checked arithmetic and when
+`panic` fires automatically.
+
+
 ## Not yet supported
 
 - `return` for early exit.

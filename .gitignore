@@ -115,7 +115,9 @@ pkgs/
 /compiler/compiler/
 
 ### mine ###
+patch.sh
 !VERSION
+
 allfiles.txt
 changes.txt
 secrets.nim
@@ -123,3 +125,4 @@ state.json
 bin/
 all_files.txt
 gitchanges.txt
+test.lidw

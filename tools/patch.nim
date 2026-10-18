@@ -18,7 +18,8 @@
 # A patch is idempotent: if NEW already appears in the file, it's
 # skipped. If OLD is missing and NEW is missing, that's a hard error.
 
-import std/[os, strutils]
+import std/strutils
+
 
 type
   Patch = object

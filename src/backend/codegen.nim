@@ -192,8 +192,11 @@ proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef
 proc diSubprogram(c: var CodegenCtx, name: string, line: int,
                   fnT: LidwType): LLVMMetadataRef
 proc setLoc(c: var CodegenCtx, n: Node)
+proc diBasicType(c: var CodegenCtx, k: TypeKind): LLVMMetadataRef
+proc diIntKind(k: TypeKind): tuple[name: string, bits: int, enc: cint]
 
 proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef
+
 
 
 
@@ -588,8 +591,33 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
           "codegen: mismatched init type not supported yet (7d-2): " &
           $n.declInit.typ.kind & " -> " & $n.typ.kind)
     discard LLVMBuildStore(c.builder, initVal, slot)
+    # <NOTE>#164: attach a DILocalVariable to the alloca so gdb shows
+    # `p x` at the right line. In LLVM 23 this is a DbgRecord, not
+    # the old dbg.declare intrinsic.
+    if c.di != nil and c.diScope.len > 0 and n.typ != nil and
+       n.typ.kind != tyFn and n.typ.kind != tyNul:
+      let info = diIntKind(n.typ.kind)
+      let varMD = LLVMDIBuilderCreateAutoVariable(c.di,
+        c.diScope[^1],
+        n.declName.cstring, csize_t(n.declName.len),
+        c.diFile,
+        cuint(max(n.line, 1)),
+        diBasicType(c, n.typ.kind),
+        0,        # AlwaysPreserve
+        0,        # Flags
+        cuint(info.bits))
+      let loc = LLVMDIBuilderCreateDebugLocation(c.ctx,
+        cuint(max(n.line, 1)), cuint(max(n.col, 1)),
+        c.diScope[^1], nil)
+      # <NOTE>#165: LLVM 23 rejects `#dbg_declare(..., (null), ...)`;
+      # the expression must be a DIExpression, even an empty one.
+      let expr = LLVMDIBuilderCreateExpression(c.di, nil, 0)
+      discard LLVMDIBuilderInsertDeclareRecordAtEnd(c.di,
+        slot, varMD, expr, loc, LLVMGetInsertBlock(c.builder))
+
     nil
   of nkAssign:
+
     # <NOTE>#108: emitExpr(nkAssign) does the store and returns the
     # value; as a statement the value is discarded.
     discard emitExpr(c, n)
@@ -927,7 +955,28 @@ proc initDI(c: var CodegenCtx, llmod: LLVMModuleRef) =
 
   ## <NOTE>#149: minimal DI. DICompileUnit + DIFile at module scope.
   ## No DISubprogram, no DILocation yet — that is D.1b/c.
+  # <NOTE>#161: LLVMDIBuilderCreateCompileUnit in LLVM 23 has no
+  # DwarfVersion parameter. Without a module flag, IR carries
+  # `version: 0` and clang rejects it ("invalid debug version (0)").
+  # Set `Dwarf Version = 5` and `Debug Info Version = 3` at module
+  # level so clang emits .debug_info.
+  # <NOTE>#162: LLVMAddModuleFlag takes LLVMMetadataRef. Wrap the
+  # ConstantInt into metadata via LLVMValueAsMetadata; do NOT wrap
+  # again in MetadataAsValue (that produces a Value*, which the C API
+  # misinterprets as Metadata* and segfaults).
+  let i32t = LLVMInt32TypeInContext(c.ctx)
+  let dwarfMD = LLVMValueAsMetadata(LLVMConstInt(i32t, 5, 0))
+  let infoMD = LLVMValueAsMetadata(LLVMConstInt(i32t, 3, 0))
+  LLVMAddModuleFlag(llmod, LLVMModuleFlagBehaviorWarning,
+    "Dwarf Version".cstring, 13, dwarfMD)
+  LLVMAddModuleFlag(llmod, LLVMModuleFlagBehaviorWarning,
+    "Debug Info Version".cstring, 18, infoMD)
+
+
+
+
   c.di = LLVMCreateDIBuilder(llmod)
+
   let fname = c.sourceFile
   let dir = "."
   c.diFile = LLVMDIBuilderCreateFile(c.di,

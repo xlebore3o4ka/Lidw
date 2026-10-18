@@ -13,6 +13,11 @@ type
   LLVMValueRef*   = ptr object
   LLVMTypeRef*    = ptr object
   LLVMBasicBlockRef* = ptr object
+  LLVMMetadataRef* = ptr object
+  LLVMDIBuilderRef* = ptr object
+  LLVMDbgRecordRef* = ptr object
+
+
 
   LLVMBool* = cint
 
@@ -58,6 +63,9 @@ proc LLVMAppendBasicBlockInContext*(C: LLVMContextRef, Fn: LLVMValueRef,
   {.cdecl, importc: "LLVMAppendBasicBlockInContext".}
 proc LLVMPositionBuilderAtEnd*(Builder: LLVMBuilderRef, Block: LLVMBasicBlockRef)
   {.cdecl, importc: "LLVMPositionBuilderAtEnd".}
+proc LLVMGetInsertBlock*(Builder: LLVMBuilderRef): LLVMBasicBlockRef
+  {.cdecl, importc: "LLVMGetInsertBlock".}
+
 
 # --- values ---
 proc LLVMConstInt*(IntTy: LLVMTypeRef, N: culonglong,
@@ -202,12 +210,25 @@ proc LLVMBuildCall2*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,
                      NumArgs: cuint, Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildCall2".}
 
+
+# --- module flags ---
+
+const
+  LLVMModuleFlagBehaviorWarning* = 1.cint
+
+# <NOTE>#163: LLVM 17+ signature: Val is LLVMMetadataRef, not
+# LLVMValueRef. Passing a MetadataAsValue (Value*) where Metadata* is
+# expected causes a segfault: different memory layouts.
+proc LLVMAddModuleFlag*(M: LLVMModuleRef, Behavior: cint,
+                        Key: cstring, KeyLen: csize_t,
+                        Val: LLVMMetadataRef)
+  {.cdecl, importc: "LLVMAddModuleFlag".}
+
+
 # --- debug info (D.1a: setup only) ---
-type
-  LLVMMetadataRef* = ptr object
-  LLVMDIBuilderRef* = ptr object
 
 # <NOTE>#151: LLVM C API LLVMDWARFSourceLanguage: C89=0, C=1,
+
 # Ada83=2, C++=3, ... (not the DWARF v4 numeric values). Use C=1.
 # LLVMDWARFEmissionKind: None=0, Full=1, LineTablesOnly=2.
 const
@@ -282,6 +303,36 @@ proc LLVMDIBuilderCreateDebugLocation*(Ctx: LLVMContextRef,
   {.cdecl, importc: "LLVMDIBuilderCreateDebugLocation".}
 proc LLVMSetCurrentDebugLocation2*(Builder: LLVMBuilderRef, Loc: LLVMMetadataRef)
   {.cdecl, importc: "LLVMSetCurrentDebugLocation2".}
+proc LLVMDIBuilderCreateAutoVariable*(Builder: LLVMDIBuilderRef,
+                                      Scope: LLVMMetadataRef,
+                                      Name: cstring, NameLen: csize_t,
+                                      File: LLVMMetadataRef,
+                                      LineNo: cuint,
+                                      Ty: LLVMMetadataRef,
+                                      AlwaysPreserve: LLVMBool,
+                                      Flags: cuint,
+                                      AlignInBits: cuint): LLVMMetadataRef
+  {.cdecl, importc: "LLVMDIBuilderCreateAutoVariable".}
+proc LLVMDIBuilderCreateExpression*(Builder: LLVMDIBuilderRef,
+                                    Addr: ptr uint64,
+                                    Length: csize_t): LLVMMetadataRef
+  {.cdecl, importc: "LLVMDIBuilderCreateExpression".}
+proc LLVMDIBuilderInsertDeclareRecordAtEnd*(Builder: LLVMDIBuilderRef,
+
+                                            Storage: LLVMValueRef,
+                                            VarInfo: LLVMMetadataRef,
+                                            Expr: LLVMMetadataRef,
+                                            DebugLoc: LLVMMetadataRef,
+                                            Block: LLVMBasicBlockRef): LLVMDbgRecordRef
+  {.cdecl, importc: "LLVMDIBuilderInsertDeclareRecordAtEnd".}
+
+proc LLVMMetadataAsValue*(C: LLVMContextRef, MD: LLVMMetadataRef): LLVMValueRef
+  {.cdecl, importc: "LLVMMetadataAsValue".}
+proc LLVMValueAsMetadata*(Val: LLVMValueRef): LLVMMetadataRef
+  {.cdecl, importc: "LLVMValueAsMetadata".}
+
+
+
 
 # --- verification ---
 

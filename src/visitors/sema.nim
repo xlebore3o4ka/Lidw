@@ -15,6 +15,8 @@ type
     symbols*: Symbols
     atTopLevel*: bool  ## true only in visitProgram's main loop
     curRetType*: LidwType  ## nil outside function body
+    curLoopDepth*: int     ## 0 outside any loop
+
 
 
 proc installBuiltins(s: var Symbols) =
@@ -51,6 +53,8 @@ proc visitParam*(v: var SemaVisitor, n: Node)
 proc visitCall*(v: var SemaVisitor, n: Node)
 proc visitRet*(v: var SemaVisitor, n: Node)
 proc visitWhile*(v: var SemaVisitor, n: Node)
+proc visitBreak*(v: var SemaVisitor, n: Node)
+
 
 
 
@@ -364,11 +368,12 @@ proc visitBlock*(v: var SemaVisitor, n: Node) =
   # itself has type `nul` (it does not yield a value; it exits the fn).
   var yielded: Node = nil
   var terminal = false
+  var terminalName = "ret"
   try:
     v.ctx = nil
     for s in n.stmts:
       if yielded != nil or terminal:
-        let after = if yielded != nil: "is" else: "ret"
+        let after = if yielded != nil: "is" else: terminalName
         raise lidwError(lekSema,
           "unreachable statement after " & after, s.line, s.col)
       if s.kind == nkIs:
@@ -379,6 +384,8 @@ proc visitBlock*(v: var SemaVisitor, n: Node) =
         visit(v, s)
         if isTerminal(s):
           terminal = true
+          terminalName = if s.kind == nkBreak: "break" else: "ret"
+
 
   finally:
     v.symbols.close()
@@ -637,7 +644,14 @@ proc visitCall*(v: var SemaVisitor, n: Node) =
           a.identName & " is immutable", a.line, a.col)
   n.typ = fnT.fnRet
 
+proc visitBreak*(v: var SemaVisitor, n: Node) =
+  if v.curLoopDepth == 0:
+    raise lidwError(lekSema,
+      "break outside loop", n.line, n.col)
+  n.typ = nulType()
+
 proc visitRet*(v: var SemaVisitor, n: Node) =
+
   # <NOTE>#111: ret is only valid inside a function body. Outside,
   # suggest `is` (which yields from a block, not from a function).
   if v.curRetType == nil:
@@ -669,9 +683,12 @@ proc visitWhile*(v: var SemaVisitor, n: Node) =
       n.whileCond.line, n.whileCond.col)
   let saveCtx = v.ctx
   v.ctx = nil
+  inc v.curLoopDepth
   visit(v, n.whileBody)
+  dec v.curLoopDepth
   v.ctx = saveCtx
   n.typ = nulType()
+
 
 proc runSema*(n: Node): Node =
 

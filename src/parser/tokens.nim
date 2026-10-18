@@ -32,7 +32,9 @@ type
     tkComma      ## ,
     tkRet        ## ret (early return)
     tkWhile      ## while
+    tkBreak      ## break
     tkEOF        ## end of input
+
 
 
 
@@ -76,6 +78,8 @@ proc `$`*(t: Token): string =
     of tkComma:   "tkComma"
     of tkRet:     "tkRet"
     of tkWhile:   "tkWhile"
+    of tkBreak:   "tkBreak"
     of tkEOF:     "tkEOF"
+
 
 

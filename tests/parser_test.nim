@@ -276,7 +276,15 @@ suite "parser":
     check expectParse("x as") == lekParse
     check expectParse("x as 5") == lekParse
 
+  test "break parses":
+    let n = p("while 1 (x = 5; break)")
+    check n.stmts[0].kind == nkWhile
+    check n.stmts[0].whileBody.kind == nkBlock
+    check n.stmts[0].whileBody.stmts.len == 2
+    check n.stmts[0].whileBody.stmts[1].kind == nkBreak
+
   test "while parses":
+
     let n = p("while 1 1")
     check n.stmts.len == 1
     check n.stmts[0].kind == nkWhile

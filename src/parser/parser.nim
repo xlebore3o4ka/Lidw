@@ -333,8 +333,12 @@ proc parseStmt(p: var Parser): Node =
   elif t.kind == tkWhile:
     p.advance()
     parseWhileLike(p, t)
+  elif t.kind == tkBreak:
+    p.advance()
+    Node(kind: nkBreak, line: t.line, col: t.col)
   else:
     parseExpr(p, 0)
+
 
 
 proc parseProgram*(tokens: seq[Token]): Node =

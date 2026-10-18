@@ -3,6 +3,17 @@
 Not bugs, not committed plans. If any of these becomes important,
 it graduates to `issues/` or to a design session.
 
+- **Adjacency for `(`: `f(x)` is a call, `f (x)` is not.** Today
+  `parseCall` fires on any callable expr followed by `(`, so
+  `if j > i (break)` parses as `if j > (i(break))` — a call on `i`
+  with a `break` argument, parse error. Workaround: drop parens
+  around the if-body (`if j > i break`) or avoid ending the
+  condition with a callable. Proper fix: lexer records
+  `precededBySpace` per token; `parseCall` requires no space between
+  callee and `(`. Matches adjacency rules for `!=`/`! =` and
+  comments.
+
+
 - **`break expr` for value-loops.** `while` is a statement (yields
   `Nul`) today. To make it an expression: `while cond (if x; break x)`
   typechecks as the value of `break expr`. Needs a `phi` in the exit

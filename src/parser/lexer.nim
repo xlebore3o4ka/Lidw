@@ -108,7 +108,9 @@ proc lexWord(l: var Lexer): Token =
     of "as":   tkAs
     of "ret":  tkRet
     of "while": tkWhile
+    of "break": tkBreak
     else:      wordKind(s[0])
+
 
 
   Token(kind: kind, word: s, line: startLine, col: startCol)

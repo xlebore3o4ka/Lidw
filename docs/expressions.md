@@ -257,11 +257,27 @@ while x < 5 x = x + 1
 while x < 5 (x = x + 1; print(x))
 ```
 
-`while` is a statement (yields `Nul`). `break` is supported inside
-the body; `continue`, `break expr`, and `for` are not yet (see
+`while` is a statement (yields `Nul`).
+
+Inside a `while` body, `break` exits the innermost enclosing loop:
+
+```
+Int x = 0
+while 1 (if x >= 3 break; x = x + 1)
+-- x == 3
+```
+
+`break` is terminal: statements after it in the same block are
+unreachable. `continue`, `break expr`, and `for` are not yet (see
 [TODO.md](../TODO.md)).
 
+**Pitfall.** `if j > i (break)` parses as `if j > (i(break))`
+because `i` is callable and `(` triggers a call. Drop parens around
+the if-body (`if j > i break`) or avoid ending the condition with a
+callable. Proper adjacency fix for `(` is tracked in `TODO.md`.
+
 `ret` inside a `while` exits the enclosing function, not the loop.
+
 
 ## `ret`
 

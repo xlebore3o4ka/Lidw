@@ -23,7 +23,10 @@ type
     printfTy: LLVMTypeRef
     printfFmt: LLVMValueRef
     curFnRetKind: TypeKind  ## ret kind of the fn whose body is emitted
+    loopExits: seq[LLVMBasicBlockRef]
+      ## <NOTE>#133: innermost last. `break` emits `br` to loopExits[^1].
     declSlots: Table[Node, LLVMValueRef]
+
       ## <NOTE>#123: alloca is hoisted to the function entry block so
       ## that a decl inside a loop body (loops not yet, but coming)
       ## does not re-allocate on every iteration. Keyed by AST node:
@@ -616,8 +619,11 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     if not condIsBool:
       cond = toBool(c, cond)
     discard LLVMBuildCondBr(c.builder, cond, bodyBB, exitBB)
+    c.loopExits.add exitBB
     LLVMPositionBuilderAtEnd(c.builder, bodyBB)
     discard emitStmt(c, n.whileBody)
+    c.loopExits.setLen(c.loopExits.len - 1)
+
     # <NOTE>#132: if the body is terminal (e.g. always `ret`), do not
     # append an unreachable `br cond`; LLVM rejects code after
     # ret/unreachable in the same block.
@@ -625,8 +631,15 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       discard LLVMBuildBr(c.builder, condBB)
     LLVMPositionBuilderAtEnd(c.builder, exitBB)
     nil
+  of nkBreak:
+    if c.loopExits.len == 0:
+      raise newException(ValueError,
+        "codegen: break outside loop (sema should reject)")
+    discard LLVMBuildBr(c.builder, c.loopExits[^1])
+    nil
   of nkRet:
     # <NOTE>#114: bare `ret` returns the default of the current fn's
+
     # return kind (0 for ints, false for Bool).
     # <NOTE>#120: Nul-returning functions emit `ret void`.
     if c.curFnRetKind == tyNul:

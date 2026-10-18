@@ -1,7 +1,9 @@
 # Codegen: LIDW AST -> LLVM IR text.
 
 import std/[tables, hashes]
+import ../version
 import ../parser/ast
+
 
 # <NOTE>#128: Node is a ref; pointer identity is the right key for
 # per-declaration alloca slots (shadowing creates distinct nodes).
@@ -29,7 +31,15 @@ type
       ## <NOTE>#140: innermost last. `continue` emits `br` to
       ## loopContinues[^1] (the condition block).
 
+    # <NOTE>#148: DI is set up in D.1a (DIFile + DICompileUnit). D.1b
+    # will add DILocations on instructions, D.1c DISubprograms, D.1d
+    # dbg.declare for locals.
+    di: LLVMDIBuilderRef
+    diFile: LLVMMetadataRef
+    diCU: LLVMMetadataRef
+    sourceFile: string
     declSlots: Table[Node, LLVMValueRef]
+
 
       ## <NOTE>#123: alloca is hoisted to the function entry block so
       ## that a decl inside a loop body (loops not yet, but coming)
@@ -818,7 +828,31 @@ proc emitFnBody(c: var CodegenCtx, decl: Node) =
 
 
 
-proc emitModule*(program: Node): string =
+proc initDI(c: var CodegenCtx, llmod: LLVMModuleRef) =
+  ## <NOTE>#149: minimal DI. DICompileUnit + DIFile at module scope.
+  ## No DISubprogram, no DILocation yet — that is D.1b/c.
+  c.di = LLVMCreateDIBuilder(llmod)
+  let fname = c.sourceFile
+  let dir = "."
+  c.diFile = LLVMDIBuilderCreateFile(c.di,
+    fname.cstring, csize_t(fname.len),
+    dir.cstring, csize_t(dir.len))
+  let producer = "lidw " & LidwVersion
+  c.diCU = LLVMDIBuilderCreateCompileUnit(c.di,
+    LLVMDWARFSourceLanguageC, c.diFile,
+
+    producer.cstring, csize_t(producer.len),
+    0,             # isOptimized
+    "".cstring, 0, # Flags
+    0,             # RuntimeVer
+    "".cstring, 0, # SplitName
+    LLVMDWARFEmissionKindFull, 0,
+    0, 0,          # SplitDebugInlining, DebugInfoForProfiling
+    "".cstring, 0, # SysRoot
+    "".cstring, 0) # SDK
+
+proc emitModule*(program: Node, sourceFile: string = "<expr>"): string =
+
   ## Lower the program and return textual LLVM IR.
   ## <TODO>#39: temporary semantics — main returns the last value
   ## expression. Replace with real program semantics once `print`/side
@@ -830,7 +864,11 @@ proc emitModule*(program: Node): string =
   let builder = LLVMCreateBuilderInContext(ctx)
   defer: LLVMDisposeBuilder(builder)
 
+  let di = LLVMCreateDIBuilder(llmod)
+  defer: LLVMDisposeDIBuilder(di)
+
   let i64 = LLVMInt64TypeInContext(ctx)
+
   let i1 = LLVMInt1TypeInContext(ctx)
   let mainTy = LLVMFunctionType(i64, nil, 0, 0)
   let mainFn = LLVMAddFunction(llmod, "main", mainTy)
@@ -839,9 +877,13 @@ proc emitModule*(program: Node): string =
   var c = CodegenCtx(ctx: ctx, module: llmod, builder: builder,
                      mainFn: mainFn, i64: i64, i1: i1,
                      curFnRetKind: tyI64,
+                     sourceFile: sourceFile,
                      declSlots: initTable[Node, LLVMValueRef](),
                      scopes: @[initTable[string, LLVMValueRef]()],
                      varTypes: @[initTable[string, LLVMTypeRef]()])
+  c.di = di
+  initDI(c, llmod)
+
 
 
 
@@ -887,8 +929,13 @@ proc emitModule*(program: Node): string =
         retVal = LLVMBuildZExt(builder, retVal, i64, "ret_zext")
   discard LLVMBuildRet(builder, retVal)
 
+  # <NOTE>#150: finalize DI before verify/print so !llvm.dbg.cu appears
+  # in the output. DI without DISubprogram/DILocation is valid.
+  LLVMDIBuilderFinalize(c.di)
+
   var errMsg: cstring = nil
   let verifyOk = LLVMVerifyModule(llmod, ReturnStatus, addr errMsg)
+
   if verifyOk != 0:
     let msg = if errMsg != nil: $errMsg else: "<no message>"
     if errMsg != nil: LLVMDisposeMessage(errMsg)

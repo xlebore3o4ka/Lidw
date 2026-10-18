@@ -202,7 +202,46 @@ proc LLVMBuildCall2*(Builder: LLVMBuilderRef, Ty: LLVMTypeRef,
                      NumArgs: cuint, Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMBuildCall2".}
 
+# --- debug info (D.1a: setup only) ---
+type
+  LLVMMetadataRef* = ptr object
+  LLVMDIBuilderRef* = ptr object
+
+# <NOTE>#151: LLVM C API LLVMDWARFSourceLanguage: C89=0, C=1,
+# Ada83=2, C++=3, ... (not the DWARF v4 numeric values). Use C=1.
+# LLVMDWARFEmissionKind: None=0, Full=1, LineTablesOnly=2.
+const
+  LLVMDWARFSourceLanguageC* = 1.cint
+  LLVMDWARFEmissionKindFull* = 1.cint
+
+
+
+proc LLVMCreateDIBuilder*(M: LLVMModuleRef): LLVMDIBuilderRef
+  {.cdecl, importc: "LLVMCreateDIBuilder".}
+proc LLVMDisposeDIBuilder*(Builder: LLVMDIBuilderRef)
+  {.cdecl, importc: "LLVMDisposeDIBuilder".}
+proc LLVMDIBuilderFinalize*(Builder: LLVMDIBuilderRef)
+  {.cdecl, importc: "LLVMDIBuilderFinalize".}
+proc LLVMDIBuilderCreateFile*(Builder: LLVMDIBuilderRef,
+                              Filename: cstring, FilenameLen: csize_t,
+                              Directory: cstring, DirectoryLen: csize_t): LLVMMetadataRef
+  {.cdecl, importc: "LLVMDIBuilderCreateFile".}
+proc LLVMDIBuilderCreateCompileUnit*(Builder: LLVMDIBuilderRef,
+                                     Lang: cint, File: LLVMMetadataRef,
+                                     Producer: cstring, ProducerLen: csize_t,
+                                     isOptimized: LLVMBool,
+                                     Flags: cstring, FlagsLen: csize_t,
+                                     RuntimeVer: cuint,
+                                     SplitName: cstring, SplitNameLen: csize_t,
+                                     Kind: cint, DWOId: cuint,
+                                     SplitDebugInlining: LLVMBool,
+                                     DebugInfoForProfiling: LLVMBool,
+                                     SysRoot: cstring, SysRootLen: csize_t,
+                                     SDK: cstring, SDKLen: csize_t): LLVMMetadataRef
+  {.cdecl, importc: "LLVMDIBuilderCreateCompileUnit".}
+
 # --- verification ---
+
 proc LLVMVerifyModule*(M: LLVMModuleRef,
                        Action: LLVMVerifierFailureAction,
                        OutMessage: ptr cstring): LLVMBool

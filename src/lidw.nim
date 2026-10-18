@@ -61,7 +61,10 @@ proc main() =
       echo $runSema(parseProgram(lexAll(source)))
     of "build":
       needArg(cmd, args)
-      echo emitModule(runSema(parseProgram(lexAll(source))))
+      let diFile =
+        if fileExists(args[1]): args[1] else: "<expr>"
+      echo emitModule(runSema(parseProgram(lexAll(source))), diFile)
+
     else:
       usage(); quit(1)
   except LidwError as e:

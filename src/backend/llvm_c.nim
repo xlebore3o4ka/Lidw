@@ -67,6 +67,11 @@ proc LLVMConstInt*(IntTy: LLVMTypeRef, N: culonglong,
 # --- instructions ---
 proc LLVMBuildRet*(Builder: LLVMBuilderRef, V: LLVMValueRef): LLVMValueRef
   {.cdecl, importc: "LLVMBuildRet".}
+proc LLVMBuildRetVoid*(Builder: LLVMBuilderRef): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildRetVoid".}
+proc LLVMVoidTypeInContext*(C: LLVMContextRef): LLVMTypeRef
+  {.cdecl, importc: "LLVMVoidTypeInContext".}
+
 
 # --- arithmetic ---
 proc LLVMBuildAdd*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,

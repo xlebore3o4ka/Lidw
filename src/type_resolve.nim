@@ -16,5 +16,7 @@ proc resolveTypeName*(name: string, line, col: int): LidwType =
   of "U32": u32Type()
   of "U64": u64Type()
   of "Bool": boolType()
+  of "Nul": nulType()
   else:
+
     raise lidwError(lekSema, "unknown type: " & name, line, col)

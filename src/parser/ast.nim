@@ -19,6 +19,8 @@ type
     nkIf, nkIs, nkCast
     nkTypeName, nkFnType, nkParam
     nkCall
+    nkRet
+
 
   Node* = ref object
     line*: int
@@ -69,6 +71,9 @@ type
     of nkCall:
       callee*: Node
       args*: seq[Node]
+    of nkRet:
+      retExpr*: Node       ## nil for bare `ret` (return default)
+
 
 proc opStr*(o: BinOp): string =
   case o
@@ -91,7 +96,23 @@ proc unopStr*(o: UnOp): string =
 proc typeSuffix(n: Node): string =
   if n.typ == nil: "" else: " [" & $n.typ & "]"
 
+proc isTerminal*(n: Node): bool =
+  ## <NOTE>#110: structural terminality. True if control cannot fall
+  ## through n. Used by sema (unreachable-after) and codegen (skip
+  ## trailing ret, drop merge blocks).
+  if n == nil: return false
+  case n.kind
+  of nkRet: true
+  of nkBlock, nkProgram:
+    n.stmts.len > 0 and isTerminal(n.stmts[^1])
+  of nkIf:
+    n.ifElse != nil and isTerminal(n.ifThen) and isTerminal(n.ifElse)
+  of nkDecl:
+    n.declInit != nil and isTerminal(n.declInit)
+  else: false
+
 proc typeNodeStr*(n: Node): string =
+
   ## <NOTE>#83: render a type-expression as source-style text.
   ## Used by `$`-render of nkDecl when sema hasn't run (typ == nil) and
   ## by parser error messages.
@@ -185,5 +206,12 @@ proc render(n: Node, depth: int): string =
     for a in n.args:
       parts.add pad & "  arg:" & "\n" & render(a, depth + 2)
     parts.join("\n")
+  of nkRet:
+    if n.retExpr == nil:
+      pad & "ret @" & $n.line & ":" & $n.col & ts
+    else:
+      pad & "ret @" & $n.line & ":" & $n.col & ts & "\n" &
+        render(n.retExpr, depth + 1)
+
 
 proc `$`*(n: Node): string = render(n, 0)

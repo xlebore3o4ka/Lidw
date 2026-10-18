@@ -17,6 +17,8 @@ type
     printfFn: LLVMValueRef
     printfTy: LLVMTypeRef
     printfFmt: LLVMValueRef
+    curFnRetKind: TypeKind  ## ret kind of the fn whose body is emitted
+
     # <NOTE>#45: scoped symbol tables. Lookup walks from innermost to
     # outermost. Mirrors the sema scope model; shadowing produces a new
     # alloca per declaration and the outer one becomes visible again
@@ -265,6 +267,7 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
     else:
       LLVMBuildCall2(c.builder, llvmFnTy, fnVal, addr argVals[0],
                      cuint(argVals.len), "call")
+
   of nkAssign:
     # <NOTE>#108: assignment as an expression. Store value, return the
     # assigned value. Mutability is a sema concern; codegen trusts it.
@@ -459,7 +462,10 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
                              addr args[0], 2, "")
       nil
     else:
-      emitExpr(c, n)
+      let v = emitExpr(c, n)
+      # <NOTE>#119: a nul-returning call as a statement has no value.
+      if n.typ != nil and n.typ.kind == tyNul: nil else: v
+
   of nkBlock:
     # <NOTE>#51: value-block delegates to emitExpr so `is` yields.
     # Statement-block (nul type) stays flat — no yield, last value wins.
@@ -471,9 +477,13 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     for s in n.stmts:
       let v = emitStmt(c, s)
       if v != nil: lastVal = v
+      # <NOTE>#113: statements after a terminal statement are dead;
+      # stop emitting (LLVM would reject the dead code otherwise).
+      if isTerminal(s): break
     c.scopes.setLen(c.scopes.len - 1)
     c.varTypes.setLen(c.varTypes.len - 1)
     lastVal
+
   of nkIf:
     # <NOTE>#44: if with a non-nul type is a value — emit via emitExpr
     # (phi in merge block). Statement if — branches are statements.
@@ -483,30 +493,57 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     let condIsBool = n.ifCond.typ != nil and n.ifCond.typ.kind == tyBool
     if not condIsBool:
       cond = toBool(c, cond)
+    # <NOTE>#115: all-terminal if (both branches ret) needs no merge
+    # block; LLVM rejects an empty unterminated block. One-terminal
+    # branches (e.g. if c; ret 1) still fall through via merge.
+    let allTerm = isTerminal(n)
+    let hasElse = n.ifElse != nil
     let thenBB = LLVMCreateBasicBlockInContext(c.ctx, "then")
-    let mergeBB = LLVMCreateBasicBlockInContext(c.ctx, "merge")
-    var elseBB: LLVMBasicBlockRef
-    if n.ifElse != nil:
+    var elseBB: LLVMBasicBlockRef = nil
+    var mergeBB: LLVMBasicBlockRef = nil
+    if hasElse:
       elseBB = LLVMCreateBasicBlockInContext(c.ctx, "else")
-    else:
-      elseBB = mergeBB
+    if not allTerm:
+      mergeBB = LLVMCreateBasicBlockInContext(c.ctx, "merge")
+    let elseTarget = if hasElse: elseBB else: mergeBB
     LLVMAppendExistingBasicBlock(c.mainFn, thenBB)
-    if n.ifElse != nil:
+    if hasElse:
       LLVMAppendExistingBasicBlock(c.mainFn, elseBB)
-    LLVMAppendExistingBasicBlock(c.mainFn, mergeBB)
-    discard LLVMBuildCondBr(c.builder, cond, thenBB, elseBB)
+    if mergeBB != nil:
+      LLVMAppendExistingBasicBlock(c.mainFn, mergeBB)
+    discard LLVMBuildCondBr(c.builder, cond, thenBB, elseTarget)
     LLVMPositionBuilderAtEnd(c.builder, thenBB)
     discard emitStmt(c, n.ifThen)
-    discard LLVMBuildBr(c.builder, mergeBB)
-    if n.ifElse != nil:
+    if not isTerminal(n.ifThen) and mergeBB != nil:
+      discard LLVMBuildBr(c.builder, mergeBB)
+    if hasElse:
       LLVMPositionBuilderAtEnd(c.builder, elseBB)
       discard emitStmt(c, n.ifElse)
-      discard LLVMBuildBr(c.builder, mergeBB)
-    LLVMPositionBuilderAtEnd(c.builder, mergeBB)
+      if not isTerminal(n.ifElse) and mergeBB != nil:
+        discard LLVMBuildBr(c.builder, mergeBB)
+    if mergeBB != nil:
+      LLVMPositionBuilderAtEnd(c.builder, mergeBB)
     nil
+  of nkRet:
+    # <NOTE>#114: bare `ret` returns the default of the current fn's
+    # return kind (0 for ints, false for Bool).
+    # <NOTE>#120: Nul-returning functions emit `ret void`.
+    if c.curFnRetKind == tyNul:
+      discard LLVMBuildRetVoid(c.builder)
+    else:
+      let v =
+        if n.retExpr != nil: emitOperand(c, n.retExpr, c.curFnRetKind)
+        elif c.curFnRetKind == tyBool:
+          LLVMConstInt(c.i1, 0, 0)
+        else:
+          LLVMConstInt(llvmIntType(c, c.curFnRetKind), 0, 0)
+      discard LLVMBuildRet(c.builder, v)
+    nil
+
   else:
     raise newException(ValueError,
       "codegen: unsupported statement: " & $n.kind)
+
 
 proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef =
   # <NOTE>#97: mutable params are passed as `ptr`. Caller takes address
@@ -518,11 +555,14 @@ proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef =
       paramTys.add LLVMPointerTypeInContext(c.ctx, 0)
     else:
       paramTys.add llvmIntType(c, pt.kind)
-  let retTy = llvmIntType(c, fnT.fnRet.kind)
+  let retTy =
+    if fnT.fnRet.kind == tyNul: LLVMVoidTypeInContext(c.ctx)
+    else: llvmIntType(c, fnT.fnRet.kind)
   if paramTys.len == 0:
     LLVMFunctionType(retTy, nil, 0, 0)
   else:
     LLVMFunctionType(retTy, addr paramTys[0], cuint(paramTys.len), 0)
+
 
 proc emitFnBody(c: var CodegenCtx, decl: Node) =
   ## <NOTE>#92: params are bound through alloca+store so they behave
@@ -535,10 +575,13 @@ proc emitFnBody(c: var CodegenCtx, decl: Node) =
   let entry = LLVMAppendBasicBlockInContext(c.ctx, fnVal, "entry")
   LLVMPositionBuilderAtEnd(c.builder, entry)
   let savedMain = c.mainFn
+  let savedRetKind = c.curFnRetKind
   c.mainFn = fnVal
+  c.curFnRetKind = decl.typ.fnRet.kind
   c.scopes.add initTable[string, LLVMValueRef]()
   c.varTypes.add initTable[string, LLVMTypeRef]()
   for i, p in decl.declTypeNode.fnParams:
+
     let ty = llvmIntType(c, decl.typ.fnParams[i].kind)
     let paramVal = LLVMGetParam(fnVal, cuint(i))
     if p.paramMut == muMutable:
@@ -552,11 +595,32 @@ proc emitFnBody(c: var CodegenCtx, decl: Node) =
       discard LLVMBuildStore(c.builder, paramVal, slot)
       if p.paramName.len > 0:
         c.defineVar(p.paramName, slot, ty)
-  let bodyVal = emitExpr(c, decl.declInit)
-  discard LLVMBuildRet(c.builder, bodyVal)
+  # <NOTE>#116: body handling depends on shape:
+  #  - terminal body (nkRet, or if with both branches ret): emit as
+  #    statement, it already ret'd; do not append.
+  #  - nul body (statement body): emit as statement, then implicit ret
+  #    default of fn's return kind (or ret void for Nul fns).
+  #  - value body: emit as expression, ret the value.
+  if isTerminal(decl.declInit):
+    discard emitStmt(c, decl.declInit)
+  elif decl.declInit.typ != nil and decl.declInit.typ.kind == tyNul:
+    discard emitStmt(c, decl.declInit)
+    if decl.typ.fnRet.kind == tyNul:
+      discard LLVMBuildRetVoid(c.builder)
+    else:
+      let defaultVal =
+        if decl.typ.fnRet.kind == tyBool: LLVMConstInt(c.i1, 0, 0)
+        else: LLVMConstInt(llvmIntType(c, decl.typ.fnRet.kind), 0, 0)
+      discard LLVMBuildRet(c.builder, defaultVal)
+  else:
+    let bodyVal = emitExpr(c, decl.declInit)
+    discard LLVMBuildRet(c.builder, bodyVal)
+
   c.scopes.setLen(c.scopes.len - 1)
   c.varTypes.setLen(c.varTypes.len - 1)
+  c.curFnRetKind = savedRetKind
   c.mainFn = savedMain
+
 
 proc emitModule*(program: Node): string =
   ## Lower the program and return textual LLVM IR.
@@ -578,8 +642,10 @@ proc emitModule*(program: Node): string =
 
   var c = CodegenCtx(ctx: ctx, module: llmod, builder: builder,
                      mainFn: mainFn, i64: i64, i1: i1,
+                     curFnRetKind: tyI64,
                      scopes: @[initTable[string, LLVMValueRef]()],
                      varTypes: @[initTable[string, LLVMTypeRef]()])
+
 
   # <NOTE>#93: three passes. 1: declare all fns. 2: emit fn bodies.
   # 3: emit main body. LLVM reorders definitions as it likes.

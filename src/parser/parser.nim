@@ -156,6 +156,16 @@ proc parseExpr(p: var Parser, minPrec: int): Node =
   # associative: `a = b = c` is `a = (b = c)`. Only attempted at top
   # level (minPrec == 0), so `1 + a = 2` does NOT parse as
   # `1 + (a = 2)`. Target must be a bare ident.
+  # <NOTE>#109: `ret` is top-level like assignment. `ret` then:
+  #  - `;`, `)`, else, elif, EOF -> bare ret (return default).
+  #  - otherwise -> ret <expr>, parsed at minPrec 0.
+  if minPrec == 0 and p.peek().kind == tkRet:
+    let retTok = p.peek()
+    p.advance()
+    if p.peek().kind in {tkSemicolon, tkRParen, tkEOF, tkElse, tkElif}:
+      return Node(kind: nkRet, retExpr: nil, line: retTok.line, col: retTok.col)
+    let e = parseExpr(p, 0)
+    return Node(kind: nkRet, retExpr: e, line: retTok.line, col: retTok.col)
   if minPrec == 0 and p.peek().kind == tkIdent and
      p.tokens[p.pos + 1].kind == tkEquals:
     let nameTok = p.peek()
@@ -165,6 +175,7 @@ proc parseExpr(p: var Parser, minPrec: int): Node =
     return Node(kind: nkAssign, assignName: nameTok.word,
                 assignValue: val, line: nameTok.line, col: nameTok.col)
   result = parseAsPostfix(p)
+
   while true:
     let t = p.peek()
     let prec = precedence(t.kind)

@@ -14,6 +14,8 @@ type
     ctx*: LidwType   ## nil = no expectation
     symbols*: Symbols
     atTopLevel*: bool  ## true only in visitProgram's main loop
+    curRetType*: LidwType  ## nil outside function body
+
 
 proc installBuiltins(s: var Symbols) =
   ## <NOTE>#103: builtins live in the root scope. Visible from any user
@@ -47,6 +49,8 @@ proc visitTypeName*(v: var SemaVisitor, n: Node)
 proc visitFnType*(v: var SemaVisitor, n: Node)
 proc visitParam*(v: var SemaVisitor, n: Node)
 proc visitCall*(v: var SemaVisitor, n: Node)
+proc visitRet*(v: var SemaVisitor, n: Node)
+
 
 proc visitTypeNode*(v: var SemaVisitor, n: Node): LidwType =
   ## <NOTE>#80: resolve a type-expression AST to LidwType. Used by
@@ -353,19 +357,27 @@ proc visitBlock*(v: var SemaVisitor, n: Node) =
   let outerCtx = v.ctx
   let saveTop = v.atTopLevel
   v.atTopLevel = false
+  # <NOTE>#121: `is` is the only yield. `ret` (and any terminal stmt)
+  # marks the block as terminated: no further stmts, and the block
+  # itself has type `nul` (it does not yield a value; it exits the fn).
   var yielded: Node = nil
+  var terminal = false
   try:
     v.ctx = nil
     for s in n.stmts:
-      if yielded != nil:
+      if yielded != nil or terminal:
+        let after = if yielded != nil: "is" else: "ret"
         raise lidwError(lekSema,
-          "unreachable statement after is", s.line, s.col)
+          "unreachable statement after " & after, s.line, s.col)
       if s.kind == nkIs:
         visit(v, s.isValue)
         s.typ = s.isValue.typ
         yielded = s
       else:
         visit(v, s)
+        if isTerminal(s):
+          terminal = true
+
   finally:
     v.symbols.close()
     v.ctx = outerCtx
@@ -376,11 +388,19 @@ proc visitBlock*(v: var SemaVisitor, n: Node) =
       raise lidwError(lekSema,
         "block yields " & $n.typ & ", expected " & $outerCtx,
         n.line, n.col)
+  elif terminal:
+    n.typ = nulType()
   else:
-    if outerCtx != nil:
+    # <NOTE>#122: a non-yielding, non-terminal block is a statement
+    # block: nul. Allowed under a nil ctx (statement position) and
+    # under a nul ctx (body of a Nul fn). Rejected under a concrete
+    # ctx — that would be a block with no value where a value is
+    # expected.
+    if outerCtx != nil and outerCtx.kind != tyNul:
       raise lidwError(lekSema,
         "block has no value, expected " & $outerCtx, n.line, n.col)
     n.typ = nulType()
+
 
 proc visitDecl*(v: var SemaVisitor, n: Node) =
   doAssert n.declTypeNode != nil, "sema: decl without type node"
@@ -401,11 +421,8 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
         "function declaration requires a body: " & n.declName,
         n.line, n.col)
     let retT = declT.fnRet
-    if retT.kind == tyNul:
-      raise lidwError(lekSema,
-        "Nul-returning functions not implemented yet",
-        n.line, n.col)
     # <NOTE>#94: every parameter of a fn decl must have a name. The
+
     # parser accepts unnamed types so fn types are flexible in type
     # position; the decl site rejects them because a body cannot use
     # an unnamed parameter, and a caller still has to pass it.
@@ -423,18 +440,32 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
       if p.paramName.len > 0:
         v.symbols.define(p.paramName, declT.fnParams[i],
                          p.paramMut, p.line, p.col)
+    let bodyTerminal = isTerminal(n.declInit)
+    let saveRet = v.curRetType
+    v.curRetType = retT
     v.ctx = retT
     visit(v, n.declInit)
-    if n.declInit.typ == nil or not fits(n.declInit.typ, retT):
-      let got = if n.declInit.typ == nil: "<untyped>" else: $n.declInit.typ
+    v.curRetType = saveRet
+    # <NOTE>#117: a nul-typed body is a statement body; codegen appends
+    # an implicit `ret <default>` of retT. Non-nul bodies must fit.
+    if not bodyTerminal and n.declInit.typ != nil and
+       n.declInit.typ.kind != tyNul and not fits(n.declInit.typ, retT):
+      let got = $n.declInit.typ
       raise lidwError(lekSema,
         "body of " & n.declName & " has type " & got &
         ", expected " & $retT, n.declInit.line, n.declInit.col)
+
     v.ctx = saveCtx
+
     v.atTopLevel = saveTop
     v.symbols.close()
     n.typ = declT
     return
+  # <NOTE>#118: Nul is a return-only type. It cannot be a variable type.
+  if declT.kind == tyNul:
+    raise lidwError(lekSema,
+      "Nul is a return-only type; use it only as a function return type",
+      n.line, n.col)
   let saveCtx = v.ctx
   v.ctx = declT
   if n.declInit != nil:
@@ -444,6 +475,7 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
       raise lidwError(lekSema,
         "initializer of " & n.declName & " has type " & got &
         ", expected " & $declT, n.line, n.col)
+
   v.ctx = saveCtx
   v.symbols.define(n.declName, declT, n.declMut, n.line, n.col)
   n.typ = declT
@@ -486,9 +518,25 @@ proc visitIf*(v: var SemaVisitor, n: Node) =
   visit(v, n.ifThen)
   if n.ifElse != nil:
     visit(v, n.ifElse)
-  # result
+  # <NOTE>#112: a terminal branch (ret) leaves the function; it does
+  # not produce a value for the if. Skip the fits-check for such
+  # branches. If every branch is terminal, `if` is terminal too, and
+  # has no value (n.typ = nul).
+  let thenTerm = isTerminal(n.ifThen)
+  let elseTerm = n.ifElse != nil and isTerminal(n.ifElse)
   if outerCtx == nil:
     n.typ = nulType()
+  elif thenTerm and (n.ifElse == nil or elseTerm):
+    # If: (a) then rets and there is no else (falls through to default),
+    # or (b) both branches ret (no fall-through). Either way, the if has
+    # no value; a surrounding statement context appends the default.
+    n.typ = nulType()
+  elif thenTerm or elseTerm:
+    # One branch returns, the other yields a value. Mixing ret and value
+    # in a value-context if is not supported; use `is` in a block.
+    raise lidwError(lekSema,
+      "ret in if branch used as value; use a block with `is`, or make both branches ret",
+      n.line, n.col)
   else:
     if not fits(n.ifThen.typ, outerCtx):
       raise lidwError(lekSema,
@@ -499,6 +547,8 @@ proc visitIf*(v: var SemaVisitor, n: Node) =
         "if branch yields " & $n.ifElse.typ & ", expected " & $outerCtx,
         n.ifElse.line, n.ifElse.col)
     n.typ = outerCtx
+
+
 
 proc visitIs*(v: var SemaVisitor, n: Node) =
   # <NOTE>#34: visitBlock handles nkIs inline. Reaching here means nkIs
@@ -585,7 +635,27 @@ proc visitCall*(v: var SemaVisitor, n: Node) =
           a.identName & " is immutable", a.line, a.col)
   n.typ = fnT.fnRet
 
+proc visitRet*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#111: ret is only valid inside a function body. Outside,
+  # suggest `is` (which yields from a block, not from a function).
+  if v.curRetType == nil:
+    raise lidwError(lekSema,
+      "ret outside function; use `is` to yield from a block, or declare a function with a return type",
+      n.line, n.col)
+  if n.retExpr != nil:
+    let saveCtx = v.ctx
+    v.ctx = v.curRetType
+    visit(v, n.retExpr)
+    v.ctx = saveCtx
+    if n.retExpr.typ == nil or not fits(n.retExpr.typ, v.curRetType):
+      let got = if n.retExpr.typ == nil: "<untyped>" else: $n.retExpr.typ
+      raise lidwError(lekSema,
+        "ret value has type " & got & ", expected " & $v.curRetType,
+        n.retExpr.line, n.retExpr.col)
+  n.typ = v.curRetType
+
 proc runSema*(n: Node): Node =
+
   ## Run sema on n; types set in-place, n returned.
   # <NOTE>#32: no root context — program root is a statement block.
   # Context enters only via declarations (Int x = ...).

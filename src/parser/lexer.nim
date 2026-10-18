@@ -106,7 +106,9 @@ proc lexWord(l: var Lexer): Token =
     of "else": tkElse
     of "is":   tkIs
     of "as":   tkAs
+    of "ret":  tkRet
     else:      wordKind(s[0])
+
   Token(kind: kind, word: s, line: startLine, col: startCol)
 
 proc lexAll*(src: string): seq[Token] =

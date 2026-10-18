@@ -30,7 +30,9 @@ type
     tkIs         ## is
     tkAs         ## as (cast)
     tkComma      ## ,
+    tkRet        ## ret (early return)
     tkEOF        ## end of input
+
 
   Token* = object
     kind*: TokenKind
@@ -70,4 +72,6 @@ proc `$`*(t: Token): string =
     of tkIs:      "tkIs"
     of tkAs:      "tkAs"
     of tkComma:   "tkComma"
+    of tkRet:     "tkRet"
     of tkEOF:     "tkEOF"
+

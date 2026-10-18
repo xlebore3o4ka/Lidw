@@ -13,6 +13,10 @@ type
     mainFn: LLVMValueRef
     i64: LLVMTypeRef
     i1: LLVMTypeRef
+    # <NOTE>#104: printf is declared once, lazily, on first builtin print.
+    printfFn: LLVMValueRef
+    printfTy: LLVMTypeRef
+    printfFmt: LLVMValueRef
     # <NOTE>#45: scoped symbol tables. Lookup walks from innermost to
     # outermost. Mirrors the sema scope model; shadowing produces a new
     # alloca per declaration and the outer one becomes visible again
@@ -151,6 +155,31 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef
 
 proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef
 
+# <NOTE>#105: printf is declared lazily at first builtin print. The
+# format string is a private constant global, reused across calls.
+proc ensurePrintf(c: var CodegenCtx) =
+  if c.printfFn != nil: return
+  let fmtVal = LLVMConstStringInContext(c.ctx, "%ld\n".cstring, 4, 0)
+  let fmtArrTy = LLVMTypeOf(fmtVal)
+  let fmtGlobal = LLVMAddGlobal(c.module, fmtArrTy, "print_fmt")
+  LLVMSetInitializer(fmtGlobal, fmtVal)
+  LLVMSetGlobalConstant(fmtGlobal, 1)
+  LLVMSetLinkage(fmtGlobal, LLVMPrivateLinkage)
+  c.printfFmt = fmtGlobal
+  let i32Ty = LLVMInt32TypeInContext(c.ctx)
+  var paramTys: array[1, LLVMTypeRef] = [LLVMPointerTypeInContext(c.ctx, 0)]
+  let fnTy = LLVMFunctionType(i32Ty, addr paramTys[0], 1, 1)
+  c.printfTy = fnTy
+  c.printfFn = LLVMAddFunction(c.module, "printf", fnTy)
+
+proc isBuiltinPrint(c: CodegenCtx, n: Node): bool =
+  ## <NOTE>#106: a call is a builtin print iff the callee is the ident
+  ## `print` AND no user `@print` function exists in the module. User
+  ## shadowing wins: codegen calls their `@print` instead.
+  n.kind == nkCall and n.callee.kind == nkIdent and
+    n.callee.identName == "print" and
+    LLVMGetNamedFunction(c.module, "print".cstring) == nil
+
 proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   case n.kind
   of nkInt:
@@ -201,6 +230,9 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
         let rhs = emitOperand(c, n.right, targetKind)
         LLVMBuildICmp(c.builder, cmpPredicate(n.op, targetKind), lhs, rhs, "cmp")
   of nkCall:
+    if isBuiltinPrint(c, n):
+      raise newException(ValueError,
+        "codegen: builtin print used in value position (sema should reject)")
     # <NOTE>#91: callee is nkIdent (fn-as-value is out of scope in v1).
     # Args are coerced to each parameter's kind; ret type is n.typ.
     if n.callee.kind != nkIdent:
@@ -410,8 +442,18 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
           $n.assignValue.typ.kind & " -> " & $n.typ.kind)
     discard LLVMBuildStore(c.builder, val, slot)
     nil
-  of nkInt, nkIdent, nkUnary, nkBinOp, nkCast, nkCall:
+  of nkInt, nkIdent, nkUnary, nkBinOp, nkCast:
     emitExpr(c, n)
+  of nkCall:
+    if isBuiltinPrint(c, n):
+      ensurePrintf(c)
+      let x = emitOperand(c, n.args[0], tyI64)
+      var args: array[2, LLVMValueRef] = [c.printfFmt, x]
+      discard LLVMBuildCall2(c.builder, c.printfTy, c.printfFn,
+                             addr args[0], 2, "")
+      nil
+    else:
+      emitExpr(c, n)
   of nkBlock:
     # <NOTE>#51: value-block delegates to emitExpr so `is` yields.
     # Statement-block (nul type) stays flat — no yield, last value wins.

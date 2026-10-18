@@ -87,6 +87,27 @@ declaration in the program scope, pass 2 checks bodies. This means:
 - Inside a block, declarations are still linear. A function body
   cannot reference a local declared after it.
 
+## Builtins
+
+### `print(Int)`
+
+Writes the value to stdout, followed by a newline. Returns `Nul`, so
+it only works in statement position.
+
+```
+print(5)             -- ok, statement
+Int x = print(5)     -- sema error: Nul does not fit i64
+```
+
+`print` lives in the root scope. A user declaration of `print` in the
+program scope shadows it. Codegen distinguishes: if a `@print` LLVM
+function exists in the module (user-declared), it is called normally;
+otherwise the call is lowered to `printf("%ld\n", x)`.
+
+`print` of anything other than `Int` is not supported yet. For
+`Bool`, use `print(b as Int)` (0 or 1). For narrow ints, use
+`print(x as Int)`. Strings do not exist.
+
 ## Not yet supported
 
 - `return` for early exit.

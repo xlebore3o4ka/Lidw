@@ -15,8 +15,18 @@ type
     symbols*: Symbols
     atTopLevel*: bool  ## true only in visitProgram's main loop
 
+proc installBuiltins(s: var Symbols) =
+  ## <NOTE>#103: builtins live in the root scope. Visible from any user
+  ## scope; a user declaration in a child scope shadows them naturally.
+  ## `print` is `Nul(Int)`: writes to stdout, returns nothing, so only
+  ## valid in statement position (sema rejects it in value contexts).
+  s.define("print", fnType(nulType(), @[i64Type()], @[muImmutable]),
+           muImmutable, 0, 0)
+
 proc newSemaVisitor*(ctx: LidwType = nil): SemaVisitor =
-  SemaVisitor(ctx: ctx, symbols: newSymbols())
+  result.ctx = ctx
+  result.symbols = newSymbols()
+  installBuiltins(result.symbols)
 
 # Forward declarations: base.visit dispatches to all four handlers;
 # without these, compiling visitUnary's body triggers visit instantiation

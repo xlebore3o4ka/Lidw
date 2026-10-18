@@ -161,6 +161,32 @@ proc LLVMPointerTypeInContext*(C: LLVMContextRef,
                                AddressSpace: cuint): LLVMTypeRef
   {.cdecl, importc: "LLVMPointerTypeInContext".}
 
+# --- globals and printf helpers ---
+proc LLVMInt8TypeInContext*(C: LLVMContextRef): LLVMTypeRef
+  {.cdecl, importc: "LLVMInt8TypeInContext".}
+proc LLVMInt32TypeInContext*(C: LLVMContextRef): LLVMTypeRef
+  {.cdecl, importc: "LLVMInt32TypeInContext".}
+proc LLVMConstStringInContext*(C: LLVMContextRef, Str: cstring,
+                               Length: cuint,
+                               DontNullTerminate: LLVMBool): LLVMValueRef
+  {.cdecl, importc: "LLVMConstStringInContext".}
+proc LLVMAddGlobal*(M: LLVMModuleRef, Ty: LLVMTypeRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMAddGlobal".}
+proc LLVMSetInitializer*(GlobalVar: LLVMValueRef, ConstantVal: LLVMValueRef)
+  {.cdecl, importc: "LLVMSetInitializer".}
+proc LLVMSetGlobalConstant*(GlobalVar: LLVMValueRef, IsConstant: LLVMBool)
+  {.cdecl, importc: "LLVMSetGlobalConstant".}
+proc LLVMSetLinkage*(Global: LLVMValueRef, Linkage: cint)
+  {.cdecl, importc: "LLVMSetLinkage".}
+proc LLVMTypeOf*(Val: LLVMValueRef): LLVMTypeRef
+  {.cdecl, importc: "LLVMTypeOf".}
+
+# <NOTE>#102: LLVMLinkage.Private = 9 in llvm-c/Core.h. Private globals
+# are not exported in the printed module, but are valid operands.
+const
+  LLVMPrivateLinkage* = 9.cint
+
 # --- call-related ---
 proc LLVMGetNamedFunction*(M: LLVMModuleRef, Name: cstring): LLVMValueRef
   {.cdecl, importc: "LLVMGetNamedFunction".}

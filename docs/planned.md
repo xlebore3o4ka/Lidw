@@ -10,12 +10,16 @@ inside a function body, and will reject statements after `return`.
 `Nul`-returning functions become viable once `return` exists
 (`Nul(Int a) log = (print(a); return)`).
 
-## `print`
+## More `print`
 
-No output primitive exists. Every program's result is the value of
-`main`, which the shell sees as an exit code (mod 256). `print`
-likely lands first with integer arguments only, before strings
-exist.
+`print(Int)` exists. Still planned:
+
+- `print(Bool)` — `true`/`false` strings, or `0`/`1`.
+- `print(String)`, multi-arg print.
+- `print` of other integer kinds directly (`U8`, `I16`, ...) — for
+  now cast with `x as Int`.
+
+String printing blocks on the string type itself (see below).
 
 ## Overflow checks
 

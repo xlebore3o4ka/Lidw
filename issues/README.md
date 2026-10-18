@@ -15,3 +15,6 @@ forgotten, drop a file here and mention it in the commit message.
 
 - [001](001-llvm-target-triple.md) — LLVM target triple and data
   layout are unset
+- [002](002-c-bindings.md) — C bindings, removing `print` as a
+  special codegen case
+

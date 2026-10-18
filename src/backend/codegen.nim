@@ -951,7 +951,24 @@ proc setLoc(c: var CodegenCtx, n: Node) =
   let loc = LLVMDIBuilderCreateDebugLocation(c.ctx, line, col, scope, nil)
   LLVMSetCurrentDebugLocation2(c.builder, loc)
 
+proc initTarget(llmod: LLVMModuleRef) =
+  # <NOTE>#171: LLVMCreateTargetData takes a *data layout* string, not
+  # a triple. Passing the triple here crashes ("unknown specifier 'x'"
+  # because 'x86_64...' is parsed as a layout). To get the layout from
+  # a target, we'd need LLVMGetTargetFromTriple + LLVMCreateTargetMachine
+  # + LLVMCreateTargetDataLayout; that's more bindings. For now hardcode
+  # the x86_64 layout (stable for LLVM 23) and use
+  # LLVMGetDefaultTargetTriple for the triple.
+  let triple = LLVMGetDefaultTargetTriple()
+  if triple != nil:
+    LLVMSetTarget(llmod, triple)
+    LLVMDisposeMessage(triple)
+  LLVMSetDataLayout(llmod,
+    "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128".cstring)
+
+
 proc initDI(c: var CodegenCtx, llmod: LLVMModuleRef) =
+
 
 
   ## <NOTE>#149: minimal DI. DICompileUnit + DIFile at module scope.
@@ -1003,15 +1020,28 @@ proc emitModule*(program: Node, sourceFile: string = "<expr>"): string =
   ## <TODO>#39: temporary semantics — main returns the last value
   ## expression. Replace with real program semantics once `print`/side
   ## effects exist.
+  # <NOTE>#169: target must be initialized before LLVMCreateTargetData,
+  # otherwise the target/layout strings are garbage ("unknown
+  # specifier 'x'"). Native-init helpers are static-inline in the C
+  # header; call the concrete X86 initializers instead.
+  LLVMInitializeX86TargetInfo()
+  LLVMInitializeX86Target()
+  LLVMInitializeX86TargetMC()
+  LLVMInitializeX86AsmPrinter()
+
   let ctx = LLVMContextCreate()
   defer: LLVMContextDispose(ctx)
   let llmod = LLVMModuleCreateWithNameInContext("lidw", ctx)
+
   defer: LLVMDisposeModule(llmod)
   let builder = LLVMCreateBuilderInContext(ctx)
   defer: LLVMDisposeBuilder(builder)
 
+  initTarget(llmod)
+
   let di = LLVMCreateDIBuilder(llmod)
   defer: LLVMDisposeDIBuilder(di)
+
 
   let i64 = LLVMInt64TypeInContext(ctx)
 

@@ -16,6 +16,8 @@ type
   LLVMMetadataRef* = ptr object
   LLVMDIBuilderRef* = ptr object
   LLVMDbgRecordRef* = ptr object
+  LLVMTargetDataRef* = ptr object
+
 
 
 
@@ -38,6 +40,33 @@ proc LLVMModuleCreateWithNameInContext*(ModuleID: cstring,
   {.cdecl, importc: "LLVMModuleCreateWithNameInContext".}
 proc LLVMDisposeModule*(M: LLVMModuleRef)
   {.cdecl, importc: "LLVMDisposeModule".}
+proc LLVMSetTarget*(M: LLVMModuleRef, Triple: cstring)
+  {.cdecl, importc: "LLVMSetTarget".}
+proc LLVMSetDataLayout*(M: LLVMModuleRef, DataLayoutStr: cstring)
+  {.cdecl, importc: "LLVMSetDataLayout".}
+# <NOTE>#170: LLVMInitializeNativeTarget is `static inline` in
+# llvm-c/Target.h and not exported from libLLVM. Call the concrete
+# host-target initializers instead. Host is x86-64 here; on other
+# hosts, swap the X86* family for the matching one.
+proc LLVMInitializeX86TargetInfo*()
+  {.cdecl, importc: "LLVMInitializeX86TargetInfo".}
+proc LLVMInitializeX86Target*()
+  {.cdecl, importc: "LLVMInitializeX86Target".}
+proc LLVMInitializeX86TargetMC*()
+  {.cdecl, importc: "LLVMInitializeX86TargetMC".}
+proc LLVMInitializeX86AsmPrinter*()
+  {.cdecl, importc: "LLVMInitializeX86AsmPrinter".}
+
+proc LLVMGetDefaultTargetTriple*(): cstring
+  {.cdecl, importc: "LLVMGetDefaultTargetTriple".}
+
+proc LLVMCreateTargetData*(Triple: cstring): LLVMTargetDataRef
+  {.cdecl, importc: "LLVMCreateTargetData".}
+proc LLVMCopyStringRepOfTargetData*(TD: LLVMTargetDataRef): cstring
+  {.cdecl, importc: "LLVMCopyStringRepOfTargetData".}
+proc LLVMDisposeTargetData*(TD: LLVMTargetDataRef)
+  {.cdecl, importc: "LLVMDisposeTargetData".}
+
 
 # --- builder ---
 proc LLVMCreateBuilderInContext*(C: LLVMContextRef): LLVMBuilderRef

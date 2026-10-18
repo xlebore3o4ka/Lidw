@@ -1,6 +1,13 @@
 # 001 — LLVM target triple and data layout are unset
 
-**Status:** deferred
+**Status:** resolved — `initTarget` in codegen sets target triple
+from `LLVMGetDefaultTargetTriple` and sets data layout from a
+hardcoded x86_64 string (matching `clang -print-target-triple` on
+this machine). `store i64` now emits `align 8` (was `align 4`),
+clang has no `-Woverride-module` warning. Portable detection needs
+`LLVMGetTargetFromTriple` + `LLVMCreateTargetMachine` +
+`LLVMCreateTargetDataLayout`, deferred.
+
 **Layer:** codegen
 **Related:** overflow checks, div-by-zero checks
 

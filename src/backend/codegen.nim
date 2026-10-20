@@ -176,7 +176,25 @@ proc nodeKindOr(n: Node, default: TypeKind): TypeKind =
 
 proc emitOperand(c: var CodegenCtx, n: Node, targetKind: TypeKind): LLVMValueRef
 
+proc llvmFloatType(c: CodegenCtx, kind: TypeKind): LLVMTypeRef =
+  case kind
+  of tyF32: LLVMFloatTypeInContext(c.ctx)
+  of tyF64: LLVMDoubleTypeInContext(c.ctx)
+  else:
+    raise newException(AssertionDefect,
+      "llvmFloatType: not a float kind: " & $kind)
+
+proc llvmTypeOf(c: CodegenCtx, kind: TypeKind): LLVMTypeRef =
+  ## <NOTE>#205: unified: Float kinds -> llvmFloatType, everything
+  ## else (Int, Bool, tyILit-as-i64 fallback) -> llvmIntType. Use this
+  ## in alloca/store/load for declarations; callers that need strict
+  ## int-only still call llvmIntType directly.
+  if kind in FloatKinds: llvmFloatType(c, kind)
+  else: llvmIntType(c, kind)
+
+
 proc llvmIntType(c: CodegenCtx, kind: TypeKind): LLVMTypeRef =
+
   ## <NOTE>#64: LLVM has one iN per width; signedness matters only in
   ## operations (sdiv/udiv, icmp slt/ult), not in the type itself.
   case kind
@@ -293,9 +311,10 @@ proc hoistAllocas(c: var CodegenCtx, root: Node) =
   collectDecls(root, decls)
   for d in decls:
     let kind = d.typ.kind
-    let llvmTy = llvmIntType(c, kind)
+    let llvmTy = llvmTypeOf(c, kind)
     let slot = LLVMBuildAlloca(c.builder, llvmTy, d.declName.cstring)
     c.declSlots[d] = slot
+
 
 proc ensureTrap(c: var CodegenCtx) =
   if c.trapFn != nil: return
@@ -439,46 +458,62 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   of nkUnary:
     case n.unop
     of uoNeg:
-      # <NOTE>#73: negate at the result width. iLit operands are
-      # emitted as constants at that width; concrete operands coerce.
+      # <NOTE>#73: negate at the result width.
+      # <NOTE>#208: float neg uses LLVMBuildFNeg, not LLVMBuildNeg.
       let targetKind = nodeKindOr(n, tyI64)
       let val = emitOperand(c, n.operand, targetKind)
-      LLVMBuildNeg(c.builder, val, "neg")
+      if targetKind in FloatKinds:
+        LLVMBuildFNeg(c.builder, val, "fneg")
+      else:
+        LLVMBuildNeg(c.builder, val, "neg")
+
   of nkBinOp:
     case n.op
     of boAdd, boSub, boMul, boDiv, boMod:
       let targetKind = nodeKindOr(n, tyI64)
       let lhs = emitOperand(c, n.left, targetKind)
       let rhs = emitOperand(c, n.right, targetKind)
-      let signed = kindSigned(targetKind)
-      case n.op
-      of boAdd, boSub, boMul:
-        # <NOTE>#186: signed add/sub/mul check for overflow; unsigned
-        # is wrap-by-design.
-        if signed and c.overflowChecks:
-          emitSignedArithOf(c, n, targetKind, lhs, rhs)
+      if targetKind in FloatKinds:
+        # <NOTE>#209: float arithmetic; no overflow/div-by-zero checks
+        # (IEEE Inf/NaN). `%` was rejected by sema for floats.
+        case n.op
+        of boAdd: LLVMBuildFAdd(c.builder, lhs, rhs, "fadd")
+        of boSub: LLVMBuildFSub(c.builder, lhs, rhs, "fsub")
+        of boMul: LLVMBuildFMul(c.builder, lhs, rhs, "fmul")
+        of boDiv: LLVMBuildFDiv(c.builder, lhs, rhs, "fdiv")
         else:
-          case n.op
-          of boAdd: LLVMBuildAdd(c.builder, lhs, rhs, "add")
-          of boSub: LLVMBuildSub(c.builder, lhs, rhs, "sub")
-          of boMul: LLVMBuildMul(c.builder, lhs, rhs, "mul")
-          else: raise newException(ValueError, "unreachable")
-      of boDiv:
-        # <NOTE>#188: div/mod always check rhs != 0; signed also checks
-        # INT_MIN / -1 (UB in LLVM sdiv/srem).
-        if c.overflowChecks:
-          emitDivChecked(c, n, targetKind, lhs, rhs, isRem = false)
-        else:
-          if signed: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
-          else: LLVMBuildUDiv(c.builder, lhs, rhs, "div")
-      of boMod:
-        if c.overflowChecks:
-          emitDivChecked(c, n, targetKind, lhs, rhs, isRem = true)
-        else:
-          if signed: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
-          else: LLVMBuildURem(c.builder, lhs, rhs, "rem")
+          raise newException(ValueError,
+            "codegen: unsupported float binop: " & opStr(n.op))
+      else:
+        let signed = kindSigned(targetKind)
+        case n.op
+        of boAdd, boSub, boMul:
+          # <NOTE>#186: signed add/sub/mul check for overflow; unsigned
+          # is wrap-by-design.
+          if signed and c.overflowChecks:
+            emitSignedArithOf(c, n, targetKind, lhs, rhs)
+          else:
+            case n.op
+            of boAdd: LLVMBuildAdd(c.builder, lhs, rhs, "add")
+            of boSub: LLVMBuildSub(c.builder, lhs, rhs, "sub")
+            of boMul: LLVMBuildMul(c.builder, lhs, rhs, "mul")
+            else: raise newException(ValueError, "unreachable")
+        of boDiv:
+          # <NOTE>#188: div/mod always check rhs != 0; signed also
+          # checks INT_MIN / -1 (UB in LLVM sdiv/srem).
+          if c.overflowChecks:
+            emitDivChecked(c, n, targetKind, lhs, rhs, isRem = false)
+          else:
+            if signed: LLVMBuildSDiv(c.builder, lhs, rhs, "div")
+            else: LLVMBuildUDiv(c.builder, lhs, rhs, "div")
+        of boMod:
+          if c.overflowChecks:
+            emitDivChecked(c, n, targetKind, lhs, rhs, isRem = true)
+          else:
+            if signed: LLVMBuildSRem(c.builder, lhs, rhs, "rem")
+            else: LLVMBuildURem(c.builder, lhs, rhs, "rem")
+        else: raise newException(ValueError, "unreachable")
 
-      else: raise newException(ValueError, "unreachable")
 
     of boEq, boNe, boLt, boLe, boGt, boGe:
       # <NOTE>#43: comparisons operate on a common representation.
@@ -582,36 +617,76 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
       "codegen: continue in value position (sema should reject)")
 
   of nkCast:
-    # <NOTE>#76: cast dispatch on (source kind, target kind). iLit is
-
-
-    # folded at the target width, no IR instruction emitted. Concrete
-    # Int<->Int uses coerceInt (trunc/sext/zext by source signedness).
-    # Int<->Bool uses icmp-ne-zero / zext.
+    # <NOTE>#76: cast dispatch on (source kind, target kind).
+    # <NOTE>#203: Float branches. iLit/fLit fold to a constant at
+    # target kind; concrete Int<->Float uses sitofp/uitofp/fptosi/
+    # fptoui; F32<->F64 uses fpext/fptrunc; Float->Bool uses fcmp une
+    # (NaN -> true).
     doAssert n.typ != nil, "codegen: cast without sema type"
     let srcKind = nodeKindOr(n.castExpr, tyI64)
     let targetKind = n.typ.kind
+    let targetIsFloat = targetKind in FloatKinds
+    let srcIsFloat = srcKind in FloatKinds
+
     if srcKind == tyILit:
       let v = n.castExpr.typ.value
       if targetKind == tyBool:
         return LLVMConstInt(c.i1, culonglong(if v != 0: 1 else: 0), 0)
-      # Int target: emit at target width.
+      if targetIsFloat:
+        return LLVMConstReal(llvmFloatType(c, targetKind), cdouble(float(v)))
       return LLVMConstInt(llvmIntType(c, targetKind),
                           cast[culonglong](v), 0)
+    if srcKind == tyFLit:
+      let fv = n.castExpr.typ.fValue
+      if targetIsFloat:
+        return LLVMConstReal(llvmFloatType(c, targetKind), cdouble(fv))
+      if targetKind == tyBool:
+        let isNZ = (fv != 0.0) or (fv != fv)
+        return LLVMConstInt(c.i1, culonglong(if isNZ: 1 else: 0), 0)
+      # <NOTE>#204: Nim's int64(float) truncates toward zero (like
+      # LLVM fptosi), so `trunc` is not needed.
+      return LLVMConstInt(llvmIntType(c, targetKind),
+                          cast[culonglong](int64(fv)), 0)
+
+
     let v = emitExpr(c, n.castExpr)
+
     if srcKind == tyBool and targetKind == tyBool:
       return v
     if srcKind == tyBool:
-      # Bool -> Int: zext i1 to iN.
       let toTy = llvmIntType(c, targetKind)
       return LLVMBuildZExt(c.builder, v, toTy, "bool_zext")
+
     if targetKind == tyBool:
-      # Int -> Bool: compare to zero, produces i1.
+      if srcIsFloat:
+        let zero = LLVMConstReal(llvmFloatType(c, srcKind), cdouble(0.0))
+        return LLVMBuildFCmp(c.builder, LLVMRealUNE, v, zero, "float_to_bool")
       let srcTy = llvmIntType(c, srcKind)
       return LLVMBuildICmp(c.builder, LLVMIntNE, v,
                            LLVMConstInt(srcTy, 0, 0), "int_to_bool")
-    # Int -> Int.
+
+    if srcIsFloat and targetIsFloat:
+      if srcKind == targetKind: return v
+      let toTy = llvmFloatType(c, targetKind)
+      if targetKind == tyF32:
+        return LLVMBuildFPTrunc(c.builder, v, toTy, "fptrunc")
+      else:
+        return LLVMBuildFPExt(c.builder, v, toTy, "fpext")
+    if srcIsFloat and targetKind in IntKinds:
+      let toTy = llvmIntType(c, targetKind)
+      if kindSigned(targetKind):
+        return LLVMBuildFPToSI(c.builder, v, toTy, "fptosi")
+      else:
+        return LLVMBuildFPToUI(c.builder, v, toTy, "fptoui")
+    if srcKind in IntKinds and targetIsFloat:
+      let toTy = llvmFloatType(c, targetKind)
+      if kindSigned(srcKind):
+        return LLVMBuildSIToFP(c.builder, v, toTy, "sitofp")
+      else:
+        return LLVMBuildUIToFP(c.builder, v, toTy, "uitofp")
+
     coerceInt(c, v, srcKind, targetKind)
+
   of nkIdent:
     let slot = c.lookupVar(n.identName)
     if slot == nil:
@@ -712,19 +787,41 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
 
 proc emitOperand(c: var CodegenCtx, n: Node,
                   targetKind: TypeKind): LLVMValueRef =
-  # <NOTE>#74: iLit operands are emitted directly at the target width
-  # (sema already folded the value). Concrete operands emit at their
-  # own width, then coerce.
-  # <NOTE>#144: iLit target means "no width context" (e.g. discard 1+2,
-  # where the folded 3 goes nowhere). Default to i64.
-  let tk = if targetKind == tyILit: tyI64 else: targetKind
+  # <NOTE>#74: literal operands are emitted directly at target kind.
+  # Concrete operands emit at own kind, then coerce.
+  # <NOTE>#144: iLit target means "no width context" (e.g. discard
+  # 1+2); default to i64 for ints.
+  # <NOTE>#207: float targets emit LLVMConstReal; concrete float
+  # operands coerce by fpext/fptrunc.
+  let targetIsFloat = targetKind in FloatKinds
   if n.typ != nil and n.typ.kind == tyILit:
+    if targetIsFloat:
+      return LLVMConstReal(llvmFloatType(c, targetKind),
+                           cdouble(float(n.typ.value)))
+    let tk = if targetKind == tyILit: tyI64 else: targetKind
     return LLVMConstInt(llvmIntType(c, tk),
                         cast[culonglong](n.typ.value), 0)
+  if n.typ != nil and n.typ.kind == tyFLit:
+    if targetIsFloat:
+      return LLVMConstReal(llvmFloatType(c, targetKind),
+                           cdouble(n.typ.fValue))
+    raise newException(ValueError,
+      "codegen: fLit operand in non-float target (sema should reject)")
 
   let v = emitExpr(c, n)
-  if n.typ == nil: return v  # defensive; sema should have set typ
+  if n.typ == nil: return v
+  if n.typ.kind in FloatKinds:
+    if targetIsFloat:
+      if n.typ.kind == targetKind: return v
+      let toTy = llvmFloatType(c, targetKind)
+      if targetKind == tyF32:
+        return LLVMBuildFPTrunc(c.builder, v, toTy, "fptrunc")
+      else:
+        return LLVMBuildFPExt(c.builder, v, toTy, "fpext")
+    raise newException(ValueError,
+      "codegen: float operand in int target (sema should reject)")
   coerceInt(c, v, n.typ.kind, targetKind)
+
 
 proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
   ## Emits one statement. Returns the value expression if n is a value
@@ -739,7 +836,7 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       return nil
     doAssert n.typ != nil, "codegen: decl without sema type"
     let declKind = n.typ.kind
-    let llvmTy = llvmIntType(c, declKind)
+    let llvmTy = llvmTypeOf(c, declKind)
     # <NOTE>#125: alloca already emitted in the entry block by
     # hoistAllocas. Look up by AST node; only create locally if not
     # found (test fixtures that build nkDecl by hand).
@@ -748,19 +845,31 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
       slot = LLVMBuildAlloca(c.builder, llvmTy, n.declName.cstring)
     c.defineVar(n.declName, slot, llvmTy)
 
+    let slotIsFloat = declKind in FloatKinds
     var initVal: LLVMValueRef
     if n.declInit == nil:
-      initVal = LLVMConstInt(llvmTy, 0, 0)
+      if slotIsFloat:
+        initVal = LLVMConstReal(llvmTy, cdouble(0.0))
+      else:
+        initVal = LLVMConstInt(llvmTy, 0, 0)
     elif n.declInit.kind == nkInt:
       initVal = LLVMConstInt(llvmTy,
         cast[culonglong](n.declInit.intVal), 0)
     elif n.declInit.typ != nil and n.declInit.typ.kind == tyILit:
       # <NOTE>#65: sema-folded literal (nkUnary(-int), folded nkBinOp)
       # carries its final value in typ as iLit(N). Emit at slot width.
-      initVal = LLVMConstInt(llvmTy,
-        cast[culonglong](n.declInit.typ.value), 0)
+      if slotIsFloat:
+        initVal = LLVMConstReal(llvmTy,
+          cdouble(float(n.declInit.typ.value)))
+      else:
+        initVal = LLVMConstInt(llvmTy,
+          cast[culonglong](n.declInit.typ.value), 0)
+    elif n.declInit.typ != nil and n.declInit.typ.kind == tyFLit:
+      # <NOTE>#206: fLit init under concrete Float slot.
+      initVal = LLVMConstReal(llvmTy, cdouble(n.declInit.typ.fValue))
     else:
       initVal = emitExpr(c, n.declInit)
+
       # <TODO>#66: coerce concrete source to slot width (7d-2). Check
       # only when both types are known; unit tests may leave typ nil.
       if n.declInit.typ != nil and
@@ -1091,9 +1200,13 @@ proc diIntKind(k: TypeKind): tuple[name: string, bits: int, enc: cint] =
   of tyU64: ("u64", 64, LLVMDWATEunsigned)
   of tyBool: ("Bool", 8, LLVMDWATEboolean)
   of tyILit: ("iLit", 64, LLVMDWATEsigned)
+  of tyF32: ("f32", 32, LLVMDWATEfloat)
+  of tyF64: ("f64", 64, LLVMDWATEfloat)
+  of tyFLit: ("fLit", 64, LLVMDWATEfloat)
   else:
     raise newException(AssertionDefect,
-      "diIntKind: not an int/bool kind: " & $k)
+      "diIntKind: not an int/bool/float kind: " & $k)
+
 
 proc diBasicType(c: var CodegenCtx, k: TypeKind): LLVMMetadataRef =
   if c.diBasicTypes.hasKey(k):

@@ -769,20 +769,29 @@ proc visitIs*(v: var SemaVisitor, n: Node) =
 
 proc visitCast*(v: var SemaVisitor, n: Node) =
   # <NOTE>#63: cast is explicit; no fits-check on the source.
-  # Source must be a value: Int, Bool, or iLit. Nul cannot be cast.
+  # <NOTE>#202: cast sources: Int (incl. iLit), Float (incl. fLit),
+  # Bool. Bool -> Float is error; everything else allowed.
   let saveCtx = v.ctx
   v.ctx = nil
   visit(v, n.castExpr)
   v.ctx = saveCtx
   let srcKind = n.castExpr.typ.kind
-  if srcKind notin IntKinds and srcKind notin {tyILit, tyBool}:
+  let srcIsInt = srcKind in IntKinds or srcKind == tyILit
+  let srcIsFloat = srcKind in FloatKinds or srcKind == tyFLit
+  let srcIsBool = srcKind == tyBool
+  if not (srcIsInt or srcIsFloat or srcIsBool):
     raise lidwError(lekSema,
       "cannot cast " & $n.castExpr.typ, n.castExpr.line, n.castExpr.col)
   let target = resolveTypeName(n.castTarget, n.line, n.col)
+  if srcIsBool and target.kind in FloatKinds:
+    raise lidwError(lekSema,
+      "cannot cast Bool to " & $target & " (use `as Int` then `as " &
+      $target & "`)", n.line, n.col)
   n.typ = target
   if v.ctx != nil and not fits(n.typ, v.ctx):
     raise lidwError(lekSema,
       "cast to " & $n.typ & " does not fit " & $v.ctx, n.line, n.col)
+
 
 proc visitTypeName*(v: var SemaVisitor, n: Node) =
   # <NOTE>#78: type nodes are resolved via visitTypeNode by their parent

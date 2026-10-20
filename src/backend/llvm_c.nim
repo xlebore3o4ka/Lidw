@@ -181,6 +181,55 @@ const
 
 proc LLVMInt1TypeInContext*(C: LLVMContextRef): LLVMTypeRef
   {.cdecl, importc: "LLVMInt1TypeInContext".}
+proc LLVMDoubleTypeInContext*(C: LLVMContextRef): LLVMTypeRef
+  {.cdecl, importc: "LLVMDoubleTypeInContext".}
+proc LLVMFloatTypeInContext*(C: LLVMContextRef): LLVMTypeRef
+  {.cdecl, importc: "LLVMFloatTypeInContext".}
+proc LLVMConstReal*(RealTy: LLVMTypeRef, N: cdouble): LLVMValueRef
+  {.cdecl, importc: "LLVMConstReal".}
+proc LLVMBuildSIToFP*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                      DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildSIToFP".}
+proc LLVMBuildUIToFP*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                      DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildUIToFP".}
+proc LLVMBuildFPToSI*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                      DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFPToSI".}
+proc LLVMBuildFPToUI*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                      DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFPToUI".}
+proc LLVMBuildFPTrunc*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                       DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFPTrunc".}
+proc LLVMBuildFPExt*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
+                     DestTy: LLVMTypeRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFPExt".}
+proc LLVMBuildFCmp*(Builder: LLVMBuilderRef, Predicate: cint,
+                    LHS, RHS: LLVMValueRef, Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFCmp".}
+proc LLVMBuildFAdd*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFAdd".}
+proc LLVMBuildFSub*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFSub".}
+proc LLVMBuildFMul*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFMul".}
+proc LLVMBuildFDiv*(Builder: LLVMBuilderRef, LHS, RHS: LLVMValueRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFDiv".}
+proc LLVMBuildFNeg*(Builder: LLVMBuilderRef, V: LLVMValueRef,
+                    Name: cstring): LLVMValueRef
+  {.cdecl, importc: "LLVMBuildFNeg".}
+
+
+# <NOTE>#201: LLVMRealPredicate. UNE = unordered not-equal: NaN != 0
+# is true, so Float->Bool treats NaN as true (non-zero).
+const
+  LLVMRealUNE* = 14.cint
+
 proc LLVMIntTypeInContext*(C: LLVMContextRef, NumBits: cuint): LLVMTypeRef
   {.cdecl, importc: "LLVMIntTypeInContext".}
 proc LLVMBuildTrunc*(Builder: LLVMBuilderRef, Val: LLVMValueRef,
@@ -351,6 +400,8 @@ const
   LLVMDWATEsigned* = 0x05.cint
   LLVMDWATEunsigned* = 0x07.cint
   LLVMDWATEboolean* = 0x02.cint
+  LLVMDWATEfloat* = 0x04.cint
+
 
 proc LLVMDIBuilderCreateDebugLocation*(Ctx: LLVMContextRef,
                                        Line, Column: cuint,

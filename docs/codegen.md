@@ -28,16 +28,25 @@ See [debug.md](debug.md).
 
 ## Target
 
-At module start, `initTarget` sets:
+At module start, `initTarget` does:
 
-- `target triple` from `LLVMGetDefaultTargetTriple` (host triple,
-  e.g. `x86_64-pc-linux-gnu`).
-- `target datalayout` hardcoded to the x86-64 SysV layout
-  `e-m:e-p270:...:64-S128`. This makes `store i64` emit `align 8`
-  (not `align 4`) and eliminates `clang`'s `-Woverride-module`.
+1. Register host targets (`LLVMInitializeX86*`,
+   `LLVMInitializeAArch64*`, `LLVMInitializeARM*`,
+   `LLVMInitializeRISCV*`). `LLVMInitializeAllTargets` is
+   `static inline` and not exported from `libLLVM`.
+2. `LLVMGetDefaultTargetTriple` → `LLVMGetTargetFromTriple`.
+3. `LLVMCreateTargetMachine(target, triple, "generic", "", O0,
+   Default, Default)`.
+4. `LLVMCreateTargetDataLayout` → `LLVMCopyStringRepOfTargetData`
+   → `LLVMSetDataLayout`.
 
-Cross-compilation is not supported; see
-[issues/001](../issues/001-llvm-target-triple.md).
+No hardcoded layout. `store i64` emits `align 8` on x86-64 hosts
+and correct alignment on AArch64/ARM/RISCV. If the host target is
+not built into `libLLVM`, `initTarget` raises with the LLVM error
+message instead of emitting a wrong layout.
+
+Cross-compilation is not supported; issue 001 is resolved.
+
 
 ## Debug info
 
@@ -182,6 +191,24 @@ Without `break`, no `while.break` block; exit value is constant
 
 `break` lowers to `br while.break`. `continue` lowers to
 `br while.cond` (the condition block).
+
+**Value loops (`break expr`).** If the body has at least one
+`break expr`, the loop is a value loop. Codegen keeps a per-loop
+`LoopFrame` (`loopStack` in `CodegenCtx`):
+
+- Every `break expr` site stores `(value, block)` in
+  `frame.breakIncoming`.
+- At `while.break`, a `phi` collects all break values (`while.brk`),
+  one incoming per site.
+- At `while.exit`, a second `phi` (`while.result`) merges
+  `while.brk` (from `while.break`) with the loop's default value
+  (from `while.cond`'s false edge).
+- Bare `break` inside a value loop contributes the default value
+  to `breakIncoming`.
+
+Statement `while` (no `break expr`) keeps the old shape: Bool via
+`while.result = phi i1 [false, cond], [true, break]`.
+
 
 
 `ret` inside `while` exits the enclosing function and terminates the

@@ -82,6 +82,14 @@ stderr as `<kind> error: <msg> at <line>:<col>`. Exit code is 1 for
 - `unreachable statement after break` / `unreachable statement after
   continue` — statement after a terminal `break`/`continue` in the
   same block.
+- `value `while` (with `break expr`) needs a context; assign it:
+  `Int x = while ...`` — a value loop in statement position.
+- `break value has type <got>, expected <type>` — `break expr` value
+  does not fit the loop's context.
+- `break with value in a non-value loop (no `break expr` in
+  siblings)` — defensive; should not be reachable, since any
+  `break expr` makes the loop a value loop.
+
 
 
 ### `while`

@@ -324,8 +324,42 @@ while 1 (if x >= 3 break; x = x + 1)
 ```
 
 `break` is terminal: statements after it in the same block are
-unreachable. `continue`, `break expr`, and `for` are not yet (see
+unreachable. `continue` and `for` are not yet (see
 [TODO.md](../TODO.md)).
+
+### `break expr` and value loops
+
+A `while` whose body contains **at least one** `break expr` is a
+*value loop*. Its type is the surrounding context, every `break
+expr` must fit that context, and the loop's value is:
+
+- the first `break expr` value, or
+- default of the context, if a bare `break` or cond-false fires
+  first.
+
+`break expr` **requires a context**: without an assignment, sema
+rejects it.
+
+```
+Int x = while 1 break 5           -- x = 5
+Int y = while 1 (if 1 break 5; break 7)   -- y = 5 (first fired)
+Int z = while 1 (if 1 break; break 5)     -- z = 0 (default)
+Int w = while 0 break 5           -- w = 0 (cond-false at start)
+F64 f = while 1 break 3.5         -- f = 3.5
+while 1 break 5                   -- sema error: needs context
+```
+
+`break expr` in a loop that has no other `break expr` is still a
+value loop. A bare `break` inside a value loop contributes the
+default of the loop's type.
+
+Mixing different `break expr` types (`break 5` and `break 2.5`)
+without a unifying context is an error, same as `if` branches.
+
+Inside a `while` body, `break` still exits the innermost enclosing
+loop. `ret` inside `break expr` (`break (ret 0)` — hypothetical) is
+not defined; use `ret` directly.
+
 
 **Pitfall.** `if j > i (break)` parses as `if j > (i(break))`
 because `i` is callable and `(` triggers a call. Drop parens around

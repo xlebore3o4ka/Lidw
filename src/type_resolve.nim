@@ -19,6 +19,8 @@ proc resolveTypeName*(name: string, line, col: int): LidwType =
   of "Nul": nulType()
   of "Float", "F64": f64Type()
   of "F32": f32Type()
+  of "Str": strType()
+
 
   else:
 

@@ -551,11 +551,22 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
     return
 
   # Arithmetic: + - * / % (float: + - * / only)
+  # <NOTE>#236: Str has its own diagnostic. Without this, Str falls
+  # through unifyArith's tail and reports "matching kinds ... (Int and
+  # Float need explicit `as`)", which is misleading for strings.
+  if n.left.typ.kind == tyStr or n.right.typ.kind == tyStr:
+    if n.op == boAdd:
+      raise lidwError(lekSema,
+        "operator + is not defined for Str; use & for concatenation",
+        n.line, n.col)
+    raise lidwError(lekSema,
+      "operator " & opStr(n.op) & " is not defined for Str", n.line, n.col)
   if n.op == boMod and (isAnyFloat(n.left.typ.kind) or isAnyFloat(n.right.typ.kind)):
 
     raise lidwError(lekSema,
       "operator % is not defined for Float", n.line, n.col)
   let unified = unifyArith(n.left.typ, n.right.typ, n.op, n.line, n.col)
+
   if v.ctx != nil and not fits(unified, v.ctx):
     raise lidwError(lekSema,
       "expression type " & $unified & " does not fit " & $v.ctx,

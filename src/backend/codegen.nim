@@ -488,7 +488,11 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   # from. Set at entry; recursive calls reset for their own nodes.
   setLoc(c, n)
   case n.kind
+  of nkStrLit:
+    raise newException(ValueError,
+      "codegen: string literal not implemented yet (S.3)")
   of nkFloat:
+
     # <NOTE>#221: direct nkFloat in expression position (e.g. `break
     # 1.5`). Emit as f64; caller coerces via coerceInt/emitOperand.
     return LLVMConstReal(llvmFloatType(c, tyF64), cdouble(n.floatVal))
@@ -511,7 +515,13 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
 
   of nkBinOp:
     case n.op
+    of boConcat:
+      # <NOTE>#234: Str & Str runtime concat is S.3; sema accepts,
+      # codegen not yet.
+      raise newException(ValueError,
+        "codegen: Str & Str not implemented yet (S.3)")
     of boAdd, boSub, boMul, boDiv, boMod:
+
       let targetKind = nodeKindOr(n, tyI64)
       let lhs = emitOperand(c, n.left, targetKind)
       let rhs = emitOperand(c, n.right, targetKind)

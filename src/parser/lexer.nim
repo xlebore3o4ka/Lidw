@@ -70,7 +70,24 @@ proc skipWhitespace(l: var Lexer) =
     else:
       break
 
+# <NOTE>#230: string literal `"..."`. MVP: no escapes (backslash is
+# literal). Unterminated -> lekLex. Multiline strings via `\n`
+# are not supported yet.
+proc lexString(l: var Lexer): Token =
+  let startLine = l.line
+  let startCol = l.col
+  l.adv()   # opening "
+  var s = ""
+  while l.pos < l.src.len and l.src[l.pos] != '"':
+    s.add l.src[l.pos]
+    l.adv()
+  if l.pos >= l.src.len:
+    raise lidwError(lekLex, "unterminated string literal", startLine, startCol)
+  l.adv()   # closing "
+  Token(kind: tkString, strVal: s, line: startLine, col: startCol)
+
 proc lexNumber(l: var Lexer): Token =
+
   let startLine = l.line
   let startCol = l.col
   var s = ""
@@ -146,6 +163,10 @@ proc lexAll*(src: string): seq[Token] =
       else:
         result.add Token(kind: tkEquals, line: startLine, col: startCol)
     of ';': l.adv(); result.add Token(kind: tkSemicolon, line: startLine, col: startCol)
+    of '"': result.add l.lexString()
+    of '&': l.adv(); result.add Token(kind: tkAmp, line: startLine, col: startCol)
+
+
     of ',': l.adv(); result.add Token(kind: tkComma,     line: startLine, col: startCol)
     # <NOTE>#25: '!' + '=' adjacent lexes as tkBangEq; 'Int x! = 5' needs
     # a space between ! and = to mean immutable-with-init.

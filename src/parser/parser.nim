@@ -17,7 +17,8 @@ proc advance(p: var Parser) = inc p.pos
 proc precedence(kind: TokenKind): int =
   case kind
   of tkEqEq, tkBangEq, tkLt, tkLe, tkGt, tkGe: 1
-  of tkPlus, tkMinus: 2
+  of tkPlus, tkMinus, tkAmp: 2
+
   of tkStar, tkSlash, tkPercent: 3
   else: 0
 
@@ -28,6 +29,7 @@ proc binOpFrom(kind: TokenKind): BinOp =
   of tkStar: boMul
   of tkSlash: boDiv
   of tkPercent: boMod
+  of tkAmp: boConcat
   of tkEqEq: boEq
   of tkBangEq: boNe
   of tkLt: boLt
@@ -50,6 +52,10 @@ proc parsePrimary(p: var Parser): Node =
     p.advance()
     result = Node(kind: nkInt, intVal: t.intVal, line: t.line, col: t.col)
     result.typ = iLitType(t.intVal)
+  of tkString:
+    p.advance()
+    result = Node(kind: nkStrLit, strVal: t.strVal, line: t.line, col: t.col)
+
   of tkFloat:
     p.advance()
     result = Node(kind: nkFloat, floatVal: t.floatVal, line: t.line, col: t.col)

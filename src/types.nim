@@ -19,6 +19,8 @@ type
     tyF32    ## 32-bit IEEE 754 float
     tyF64    ## 64-bit IEEE 754 float
     tyFLit   ## untyped float literal
+    tyStr    ## string view: {ptr: *u8, len: i64}; not owned
+
 
 
   LidwType* = ref object
@@ -34,6 +36,8 @@ type
     of tyF32: discard
     of tyF64: discard
     of tyFLit: fValue*: float
+    of tyStr: discard
+
 
 
 
@@ -67,7 +71,9 @@ proc fnType*(ret: LidwType, params: seq[LidwType],
   LidwType(kind: tyFn, fnRet: ret, fnParams: params,
            fnParamsMut: paramsMut)
 
+proc strType*(): LidwType = LidwType(kind: tyStr)
 proc f32Type*(): LidwType = LidwType(kind: tyF32)
+
 proc f64Type*(): LidwType = LidwType(kind: tyF64)
 proc fLitType*(v: float): LidwType = LidwType(kind: tyFLit, fValue: v)
 
@@ -93,7 +99,9 @@ proc bitWidth*(t: LidwType): int =
   of tyI64, tyU64: 64
   of tyF32: 32
   of tyF64: 64
+  of tyStr: 128
   else:
+
     raise newException(AssertionDefect,
       "bitWidth: not an int or float type: " & $t.kind)
 
@@ -119,5 +127,7 @@ proc `$`*(t: LidwType): string =
   of tyF32: "f32"
   of tyF64: "f64"
   of tyFLit: "fLit(" & $t.fValue & ")"
+  of tyStr: "Str"
+
 
 

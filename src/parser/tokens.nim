@@ -35,7 +35,11 @@ type
     tkBreak      ## break
     tkContinue   ## continue
     tkDiscard    ## discard
+    tkString     ## "..." string literal
+    tkAmp        ## &
     tkEOF        ## end of input
+
+
 
 
 
@@ -47,6 +51,8 @@ type
     intVal*: int64    ## valid iff kind == tkInt
     floatVal*: float  ## valid iff kind == tkFloat
     word*: string     ## valid iff kind in {tkIdent, tkType}
+    strVal*: string   ## valid iff kind == tkString (decoded bytes)
+
     line*: int        ## 1-based line of token start
     col*: int         ## 1-based column of token start
 
@@ -85,7 +91,11 @@ proc `$`*(t: Token): string =
     of tkBreak:   "tkBreak"
     of tkContinue: "tkContinue"
     of tkDiscard:  "tkDiscard"
+    of tkString:   "tkString"
+    of tkAmp:      "tkAmp"
     of tkEOF:     "tkEOF"
+
+
 
 
 

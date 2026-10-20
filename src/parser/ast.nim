@@ -9,6 +9,8 @@ type
   BinOp* = enum
     boAdd, boSub, boMul, boDiv, boMod
     boEq, boNe, boLt, boLe, boGt, boGe
+    boConcat   ## Str & Str
+
 
   UnOp* = enum
     uoNeg
@@ -24,6 +26,8 @@ type
     nkBreak
     nkContinue
     nkDiscard
+    nkStrLit
+
 
 
 
@@ -90,6 +94,9 @@ type
 
     of nkDiscard:
       discardExpr*: Node       ## nil for bare `discard`
+    of nkStrLit:
+      strVal*: string
+
 
 
 
@@ -103,7 +110,9 @@ proc opStr*(o: BinOp): string =
   of boMul: "*"
   of boDiv: "/"
   of boMod: "%"
+  of boConcat: "&"
   of boEq: "=="
+
   of boNe: "!="
   of boLt: "<"
   of boLe: "<="
@@ -258,6 +267,9 @@ proc render(n: Node, depth: int): string =
     else:
       pad & "discard @" & $n.line & ":" & $n.col & ts & "\n" &
         render(n.discardExpr, depth + 1)
+  of nkStrLit:
+    pad & "str(" & n.strVal & ") @" & $n.line & ":" & $n.col & ts
+
 
 
 

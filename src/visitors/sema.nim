@@ -43,8 +43,11 @@ proc installBuiltins(s: var Symbols) =
   ## scope; a user declaration in a child scope shadows them naturally.
   ## `print` is `Nul(Int)`: writes to stdout, returns nothing, so only
   ## valid in statement position (sema rejects it in value contexts).
-  s.define("print", fnType(nulType(), @[i64Type()], @[muImmutable]),
+  # <NOTE>#233: print is Nul(Str). Numbers are not printable until
+  # `intToStr` or `&`-with-Int lands (TODO).
+  s.define("print", fnType(nulType(), @[strType()], @[muImmutable]),
            muImmutable, 0, 0)
+
   # <NOTE>#172: panic is a builtin `Nul()`. Codegen lowers it to
   # llvm.trap + unreachable; no `@panic` symbol is emitted unless the
   # user shadows it.
@@ -82,6 +85,8 @@ proc visitWhile*(v: var SemaVisitor, n: Node)
 proc visitBreak*(v: var SemaVisitor, n: Node)
 proc visitContinue*(v: var SemaVisitor, n: Node)
 proc visitDiscard*(v: var SemaVisitor, n: Node)
+proc visitStrLit*(v: var SemaVisitor, n: Node)
+
 
 
 
@@ -169,9 +174,11 @@ proc fits*(t, ctx: LidwType): bool =
     else: false
   of tyFLit:
     t.kind == tyFLit and t.fValue == ctx.fValue
-
+  of tyStr:
+    t.kind == tyStr
   else:
     false
+
 
 
 proc foldInt(op: BinOp, a, b: int64, line, col: int): int64 =
@@ -208,6 +215,11 @@ proc foldInt(op: BinOp, a, b: int64, line, col: int): int64 =
     # <NOTE>#27: comparisons are handled in visitBinOp before foldInt;
     # reaching here means the dispatch above is broken.
     raise newException(AssertionDefect, "foldInt: comparison op " & opStr(op))
+  of boConcat:
+    # <NOTE>#234: concat is handled in visitBinOp before foldInt;
+    # reaching here means the dispatch above is broken.
+    raise newException(AssertionDefect, "foldInt: concat op " & opStr(op))
+
 
 proc visitInt*(v: var SemaVisitor, n: Node) =
   # <NOTE>#11: literal keeps iLit under context; fits() is a check, not
@@ -505,8 +517,25 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
         "comparison result Bool does not fit " & $v.ctx, n.line, n.col)
     return
 
+  # <NOTE>#234: concat. MVP: Str & Str -> Str only.
+  # Str & Int is deferred until intToStr lands (see NOTE #233).
+  if n.op == boConcat:
+    let lk = n.left.typ.kind
+    let rk = n.right.typ.kind
+    if lk != tyStr or rk != tyStr:
+      raise lidwError(lekSema,
+        "operator & requires Str operands, got " &
+        $n.left.typ & " and " & $n.right.typ, n.line, n.col)
+    n.typ = strType()
+    if v.ctx != nil and not fits(n.typ, v.ctx):
+      raise lidwError(lekSema,
+        "expression type " & $n.typ & " does not fit " & $v.ctx,
+        n.line, n.col)
+    return
+
   # Arithmetic: + - * / % (float: + - * / only)
   if n.op == boMod and (isAnyFloat(n.left.typ.kind) or isAnyFloat(n.right.typ.kind)):
+
     raise lidwError(lekSema,
       "operator % is not defined for Float", n.line, n.col)
   let unified = unifyArith(n.left.typ, n.right.typ, n.op, n.line, n.col)
@@ -972,7 +1001,13 @@ proc visitWhile*(v: var SemaVisitor, n: Node) =
 
 
 
+proc visitStrLit*(v: var SemaVisitor, n: Node) =
+  # <NOTE>#231: string literal has type Str.
+  n.typ = strType()
+
+
 proc runSema*(n: Node): Node =
+
 
 
   ## Run sema on n; types set in-place, n returned.

@@ -17,6 +17,9 @@ type
   LLVMDIBuilderRef* = ptr object
   LLVMDbgRecordRef* = ptr object
   LLVMTargetDataRef* = ptr object
+  LLVMTargetRef* = ptr object
+  LLVMTargetMachineRef* = ptr object
+
 
 
 
@@ -42,6 +45,19 @@ proc LLVMDisposeModule*(M: LLVMModuleRef)
   {.cdecl, importc: "LLVMDisposeModule".}
 proc LLVMSetTarget*(M: LLVMModuleRef, Triple: cstring)
   {.cdecl, importc: "LLVMSetTarget".}
+proc LLVMGetTargetFromTriple*(Triple: cstring, T: ptr LLVMTargetRef,
+                              ErrorMessage: ptr cstring): LLVMBool
+  {.cdecl, importc: "LLVMGetTargetFromTriple".}
+proc LLVMCreateTargetMachine*(T: LLVMTargetRef, Triple: cstring,
+                              CPU: cstring, Features: cstring,
+                              Level: cint, Reloc: cint,
+                              CodeModel: cint): LLVMTargetMachineRef
+  {.cdecl, importc: "LLVMCreateTargetMachine".}
+proc LLVMDisposeTargetMachine*(T: LLVMTargetMachineRef)
+  {.cdecl, importc: "LLVMDisposeTargetMachine".}
+proc LLVMCreateTargetDataLayout*(T: LLVMTargetMachineRef): LLVMTargetDataRef
+  {.cdecl, importc: "LLVMCreateTargetDataLayout".}
+
 proc LLVMSetDataLayout*(M: LLVMModuleRef, DataLayoutStr: cstring)
   {.cdecl, importc: "LLVMSetDataLayout".}
 # <NOTE>#170: LLVMInitializeNativeTarget is `static inline` in
@@ -56,6 +72,36 @@ proc LLVMInitializeX86TargetMC*()
   {.cdecl, importc: "LLVMInitializeX86TargetMC".}
 proc LLVMInitializeX86AsmPrinter*()
   {.cdecl, importc: "LLVMInitializeX86AsmPrinter".}
+
+# <NOTE>#210: LLVMInitializeAllTargets is `static inline` in
+# llvm-c/Target.h and not exported from libLLVM. Register the targets
+# that are actually built into libLLVM-23 by hand. Missing a family
+# here means "target X not built into LLVM" at LLVMGetTargetFromTriple.
+proc LLVMInitializeAArch64TargetInfo*()
+  {.cdecl, importc: "LLVMInitializeAArch64TargetInfo".}
+proc LLVMInitializeAArch64Target*()
+  {.cdecl, importc: "LLVMInitializeAArch64Target".}
+proc LLVMInitializeAArch64TargetMC*()
+  {.cdecl, importc: "LLVMInitializeAArch64TargetMC".}
+proc LLVMInitializeAArch64AsmPrinter*()
+  {.cdecl, importc: "LLVMInitializeAArch64AsmPrinter".}
+proc LLVMInitializeARMTargetInfo*()
+  {.cdecl, importc: "LLVMInitializeARMTargetInfo".}
+proc LLVMInitializeARMTarget*()
+  {.cdecl, importc: "LLVMInitializeARMTarget".}
+proc LLVMInitializeARMTargetMC*()
+  {.cdecl, importc: "LLVMInitializeARMTargetMC".}
+proc LLVMInitializeARMAsmPrinter*()
+  {.cdecl, importc: "LLVMInitializeARMAsmPrinter".}
+proc LLVMInitializeRISCVTargetInfo*()
+  {.cdecl, importc: "LLVMInitializeRISCVTargetInfo".}
+proc LLVMInitializeRISCVTarget*()
+  {.cdecl, importc: "LLVMInitializeRISCVTarget".}
+proc LLVMInitializeRISCVTargetMC*()
+  {.cdecl, importc: "LLVMInitializeRISCVTargetMC".}
+proc LLVMInitializeRISCVAsmPrinter*()
+  {.cdecl, importc: "LLVMInitializeRISCVAsmPrinter".}
+
 
 proc LLVMGetDefaultTargetTriple*(): cstring
   {.cdecl, importc: "LLVMGetDefaultTargetTriple".}

@@ -2,7 +2,9 @@
 # <NOTE>#8: context flows via SemaVisitor.ctx; if a handler ever needs a
 #           different context for children it must save/restore.
 
+import std/math
 import ../parser/ast
+
 import ../types
 import ../errors
 import ../scope
@@ -19,6 +21,19 @@ type
 
 
 
+const BuiltinValueNames* = ["true", "false", "inf", "nan"]
+
+proc builtinValueType(name: string): LidwType =
+  # <NOTE>#194: true/false are iLit(1)/iLit(0), not Bool. iLit fits
+  # Bool by the existing rule; this keeps one literal kind.
+  # inf/nan are fLit; representable in both F32 and F64.
+  case name
+  of "true": iLitType(1)
+  of "false": iLitType(0)
+  of "inf": fLitType(Inf)
+  of "nan": fLitType(NaN)
+  else: nil
+
 proc installBuiltins(s: var Symbols) =
   ## <NOTE>#103: builtins live in the root scope. Visible from any user
   ## scope; a user declaration in a child scope shadows them naturally.
@@ -31,6 +46,7 @@ proc installBuiltins(s: var Symbols) =
   # user shadows it.
   s.define("panic", fnType(nulType(), @[], @[]),
            muImmutable, 0, 0)
+
 
 
 proc newSemaVisitor*(ctx: LidwType = nil): SemaVisitor =
@@ -125,8 +141,34 @@ proc fits*(t, ctx: LidwType): bool =
     t.kind == tyBool or t.kind == tyILit
   of tyNul:
     t.kind == tyNul
+  of tyF32:
+    # <NOTE>#191: fLit fits F32 if representable (finite in range, or
+    # Inf/NaN); iLit fits (lossy by design); F64 does NOT fit (explicit
+    # `as` needed).
+    case t.kind
+    of tyFLit:
+      let v = t.fValue
+      # <NOTE>#196: F32 max magnitude is 3.4028234663852886e38.
+      (v != v) or abs(v) == Inf or abs(v) <= 3.4028234663852886e38
+
+
+    of tyF32: true
+    of tyF64: false
+    of tyILit: true
+    else: false
+  of tyF64:
+    case t.kind
+    of tyFLit: true
+    of tyF32: true
+    of tyF64: true
+    of tyILit: true
+    else: false
+  of tyFLit:
+    t.kind == tyFLit and t.fValue == ctx.fValue
+
   else:
     false
+
 
 proc foldInt(op: BinOp, a, b: int64, line, col: int): int64 =
   ## Compute a op b; raise lekSema on overflow or division by zero.
@@ -175,8 +217,16 @@ proc visitInt*(v: var SemaVisitor, n: Node) =
   n.typ = lt
 
 proc visitFloat*(v: var SemaVisitor, n: Node) =
-  # <TODO>#9: float types not in the system yet; leave typ nil.
-  discard
+  # <NOTE>#192: float literals behave like iLit: keep as fLit under no
+  # ctx; under Float ctx they adopt ctx via fits; under Int/Bool they
+  # are rejected.
+  let ft = fLitType(n.floatVal)
+  if v.ctx != nil and not fits(ft, v.ctx):
+    raise lidwError(lekSema,
+      "float literal " & $n.floatVal & " does not fit " & $v.ctx,
+      n.line, n.col)
+  n.typ = ft
+
 
 proc visitUnary*(v: var SemaVisitor, n: Node) =
   # <NOTE>#57: operand is visited without ctx. Unary minus folds
@@ -198,12 +248,24 @@ proc visitUnary*(v: var SemaVisitor, n: Node) =
         raise lidwError(lekSema,
           "literal " & $lt & " does not fit " & $v.ctx, n.line, n.col)
       n.typ = lt
+  elif n.operand.typ.kind == tyFLit:
+    # <NOTE>#193: unary minus folds through fLit; -Inf/-NaN keep IEEE
+    # identity (sign bit flips, still Inf/NaN).
+    case n.unop
+    of uoNeg:
+      let lt = fLitType(-n.operand.typ.fValue)
+
+      if v.ctx != nil and not fits(lt, v.ctx):
+        raise lidwError(lekSema,
+          "float literal " & $lt & " does not fit " & $v.ctx, n.line, n.col)
+      n.typ = lt
   else:
-    if n.operand.typ.kind notin IntKinds:
+    if n.operand.typ.kind notin IntKinds and not isFloatKind(n.operand.typ):
       raise lidwError(lekSema,
-        "unary " & unopStr(n.unop) & " requires Int, got " & $n.operand.typ,
+        "unary " & unopStr(n.unop) & " requires Int or Float, got " & $n.operand.typ,
         n.line, n.col)
     if v.ctx != nil and not fits(n.operand.typ, v.ctx):
+
       raise lidwError(lekSema,
         "operand of unary " & unopStr(n.unop) & " has type " & $n.operand.typ &
         ", expected " & $v.ctx, n.line, n.col)
@@ -506,9 +568,16 @@ proc visitDecl*(v: var SemaVisitor, n: Node) =
 
 proc visitIdent*(v: var SemaVisitor, n: Node) =
   let sym = v.symbols.lookup(n.identName)
-  if sym.typ == nil:
-    raise lidwError(lekSema, "undefined variable: " & n.identName, n.line, n.col)
-  n.typ = sym.typ
+  if sym.typ != nil:
+    n.typ = sym.typ
+    return
+  # <NOTE>#195: builtin value names (true/false/inf/nan) are not in
+  # Symbols; a user declaration with the same name wins (lookup above).
+  if n.identName in BuiltinValueNames:
+    n.typ = builtinValueType(n.identName)
+    return
+  raise lidwError(lekSema, "undefined variable: " & n.identName, n.line, n.col)
+
 
 proc visitAssign*(v: var SemaVisitor, n: Node) =
   let sym = v.symbols.lookup(n.assignName)

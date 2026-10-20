@@ -792,8 +792,12 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     # value; as a statement the value is discarded.
     discard emitExpr(c, n)
     nil
+  of nkFloat:
+    raise newException(ValueError,
+      "codegen: float literal not implemented yet (F.5)")
   of nkInt, nkIdent, nkUnary, nkBinOp, nkCast:
     emitExpr(c, n)
+
   of nkCall:
     if isBuiltinPanic(c, n):
       # <NOTE>#175: panic lowers to llvm.trap + unreachable.

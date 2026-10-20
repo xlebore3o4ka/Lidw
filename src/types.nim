@@ -16,6 +16,10 @@ type
     tyBool   ## boolean
     tyNul    ## no value (statement position)
     tyFn     ## function type
+    tyF32    ## 32-bit IEEE 754 float
+    tyF64    ## 64-bit IEEE 754 float
+    tyFLit   ## untyped float literal
+
 
   LidwType* = ref object
     case kind*: TypeKind
@@ -27,6 +31,11 @@ type
       fnRet*: LidwType
       fnParams*: seq[LidwType]
       fnParamsMut*: seq[Mutability]
+    of tyF32: discard
+    of tyF64: discard
+    of tyFLit: fValue*: float
+
+
 
 const IntKinds* = {tyI8, tyU8, tyI16, tyU16, tyI32, tyU32, tyI64, tyU64}
 
@@ -58,6 +67,16 @@ proc fnType*(ret: LidwType, params: seq[LidwType],
   LidwType(kind: tyFn, fnRet: ret, fnParams: params,
            fnParamsMut: paramsMut)
 
+proc f32Type*(): LidwType = LidwType(kind: tyF32)
+proc f64Type*(): LidwType = LidwType(kind: tyF64)
+proc fLitType*(v: float): LidwType = LidwType(kind: tyFLit, fValue: v)
+
+
+const FloatKinds* = {tyF32, tyF64}
+
+proc isFloatKind*(t: LidwType): bool = t.kind in FloatKinds
+
+
 proc isSigned*(t: LidwType): bool =
   case t.kind
   of tyI8, tyI16, tyI32, tyI64: true
@@ -72,9 +91,12 @@ proc bitWidth*(t: LidwType): int =
   of tyI16, tyU16: 16
   of tyI32, tyU32: 32
   of tyI64, tyU64: 64
+  of tyF32: 32
+  of tyF64: 64
   else:
     raise newException(AssertionDefect,
-      "bitWidth: not an int type: " & $t.kind)
+      "bitWidth: not an int or float type: " & $t.kind)
+
 
 proc `$`*(t: LidwType): string =
   case t.kind
@@ -94,3 +116,8 @@ proc `$`*(t: LidwType): string =
     for p in t.fnParams:
       parts.add $p
     $t.fnRet & "(" & parts.join(", ") & ")"
+  of tyF32: "f32"
+  of tyF64: "f64"
+  of tyFLit: "fLit(" & $t.fValue & ")"
+
+

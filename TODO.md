@@ -45,7 +45,19 @@ it graduates to `issues/` or to a design session.
   shadowing); (b) a separate `nkPanic` AST node (breaks "builtin as
   ordinary function"); (c) a `never` return type, sema-only. Defer
   until `panic` shows up in real programs.
+- **Everything as an expression.** Today decl is a statement:
+  `Int a = Int b = 10` is a parse error because `parsePrimary(tkType)`
+  raises. Design goal: every construct yields a value. For decl,
+  `Int b = 10` would yield `initVal` (i.e. `10`), and
+  `Int a = Int b = 10` would bind `b` then set `a = 10`. Sketched:
+  (1) parser `tkType` -> `parseDecl` in `parsePrimary`;
+  (2) `nkDecl` in expression position returns its `initVal`;
+  (3) `emitExpr(nkDecl)` diverges from `emitStmt(nkDecl)`
+  (stmt -> nil, expr -> value); (4) `ret`/`break`/`continue` become
+  terminal `never`-typed expressions eventually. Defer; current
+  workaround is `(Int b = 10; is b)`.
 - **`for` loop.** Sugar over `while`. Needs either a `Range` type
+
 
   (`for i in 0..10`) or a LIDW-idiomatic alternative. Defer until
   Range exists.

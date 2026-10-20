@@ -282,7 +282,25 @@ suite "parser":
     check n.stmts[0].whileBody.kind == nkBlock
     check n.stmts[0].whileBody.stmts[1].kind == nkContinue
 
+  test "break bare parses":
+    let n = p("while 1 break")
+    check n.stmts[0].kind == nkWhile
+    check n.stmts[0].whileBody.kind == nkBreak
+    check n.stmts[0].whileBody.breakExpr == nil
+
+  test "break with expr parses":
+    let n = p("while 1 break 5")
+    check n.stmts[0].whileBody.kind == nkBreak
+    check n.stmts[0].whileBody.breakExpr != nil
+    check n.stmts[0].whileBody.breakExpr.kind == nkInt
+
+  test "break with binop expr":
+    let n = p("while 1 break 1 + 2")
+    check n.stmts[0].whileBody.kind == nkBreak
+    check n.stmts[0].whileBody.breakExpr.kind == nkBinOp
+
   test "break parses":
+
 
     let n = p("while 1 (x = 5; break)")
     check n.stmts[0].kind == nkWhile

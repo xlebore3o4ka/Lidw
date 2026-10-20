@@ -352,7 +352,14 @@ proc parseStmt(p: var Parser): Node =
     parseWhileLike(p, t)
   elif t.kind == tkBreak:
     p.advance()
-    Node(kind: nkBreak, line: t.line, col: t.col)
+    # <NOTE>#213: `break` is bare when followed by a statement terminator.
+    # Otherwise it takes one expression: `break 5`.
+    if p.peek().kind in {tkSemicolon, tkRParen, tkEOF, tkElse, tkElif}:
+      Node(kind: nkBreak, breakExpr: nil, line: t.line, col: t.col)
+    else:
+      let e = parseExpr(p, 0)
+      Node(kind: nkBreak, breakExpr: e, line: t.line, col: t.col)
+
   elif t.kind == tkContinue:
     p.advance()
     Node(kind: nkContinue, line: t.line, col: t.col)

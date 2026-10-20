@@ -18,6 +18,10 @@ type
     atTopLevel*: bool  ## true only in visitProgram's main loop
     curRetType*: LidwType  ## nil outside function body
     curLoopDepth*: int     ## 0 outside any loop
+    # <NOTE>#214: value context of the innermost value-loop (a `while`
+    # whose body has `break expr`). nil means "not in a value loop".
+    curLoopValueCtx*: LidwType
+
 
 
 
@@ -858,7 +862,25 @@ proc visitBreak*(v: var SemaVisitor, n: Node) =
   if v.curLoopDepth == 0:
     raise lidwError(lekSema,
       "break outside loop", n.line, n.col)
-  n.typ = nulType()
+  if n.breakExpr != nil:
+    # <NOTE>#217: break with a value: visit expr under nil ctx, check
+    # fit against the loop's value ctx.
+    let saveCtx = v.ctx
+    v.ctx = nil
+    visit(v, n.breakExpr)
+    v.ctx = saveCtx
+    if v.curLoopValueCtx == nil:
+      raise lidwError(lekSema,
+        "break with value in a non-value loop (no `break expr` in siblings)",
+        n.line, n.col)
+    if not fits(n.breakExpr.typ, v.curLoopValueCtx):
+      raise lidwError(lekSema,
+        "break value has type " & $n.breakExpr.typ &
+        ", expected " & $v.curLoopValueCtx, n.breakExpr.line, n.breakExpr.col)
+    n.typ = n.breakExpr.typ
+  else:
+    n.typ = nulType()
+
 
 proc visitContinue*(v: var SemaVisitor, n: Node) =
   if v.curLoopDepth == 0:
@@ -899,9 +921,27 @@ proc visitRet*(v: var SemaVisitor, n: Node) =
         n.retExpr.line, n.retExpr.col)
   n.typ = v.curRetType
 
+proc hasBreakExpr(n: Node): bool =
+  ## <NOTE>#215: does this loop body contain a `break expr` that
+  ## targets the current loop? Nested `while` owns its own breaks,
+  ## do not descend.
+  if n == nil: return false
+  case n.kind
+  of nkBreak: n.breakExpr != nil
+  of nkWhile: false
+  of nkBlock, nkProgram:
+    for s in n.stmts:
+      if hasBreakExpr(s): return true
+    false
+  of nkIf: hasBreakExpr(n.ifThen) or hasBreakExpr(n.ifElse)
+  else: false
+
 proc visitWhile*(v: var SemaVisitor, n: Node) =
   # <NOTE>#130: cond fits Bool. Body is a statement (nil ctx).
-  # `while` yields Nul; value-loops via `break expr` are deferred.
+  # <NOTE>#216: a `while` whose body has at least one `break expr` is
+  # a value loop: it takes outer ctx as its value type, every `break
+  # expr` must fit that ctx. Bare `break` in a value loop contributes
+  # default of ctx (L.5c). Cond-false also yields default.
   let outerCtx = v.ctx
   v.ctx = nil
   visit(v, n.whileCond)
@@ -910,16 +950,25 @@ proc visitWhile*(v: var SemaVisitor, n: Node) =
     raise lidwError(lekSema,
       "while condition has type " & $n.whileCond.typ & ", expected Bool",
       n.whileCond.line, n.whileCond.col)
+  let valueLoop = hasBreakExpr(n.whileBody)
+  if valueLoop and outerCtx == nil:
+    raise lidwError(lekSema,
+      "value `while` (with `break expr`) needs a context; assign it: " &
+      "`Int x = while ...`", n.line, n.col)
   let saveCtx = v.ctx
+  let saveLoopCtx = v.curLoopValueCtx
   v.ctx = nil
-  # <NOTE>#136: while yields Bool. true if the loop exited via break,
-  # false if the condition became false. `break expr` (value-loops)
-  # will change the type, see TODO.md.
+  v.curLoopValueCtx = if valueLoop: outerCtx else: nil
   inc v.curLoopDepth
   visit(v, n.whileBody)
   dec v.curLoopDepth
+  v.curLoopValueCtx = saveLoopCtx
   v.ctx = saveCtx
-  n.typ = boolType()
+  if valueLoop:
+    n.typ = outerCtx
+  else:
+    n.typ = boolType()
+
 
 
 

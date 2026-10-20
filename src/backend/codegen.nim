@@ -286,7 +286,22 @@ proc collectDecls(n: Node, acc: var seq[Node]) =
 
 
 
+proc hasBreakExpr(n: Node): bool =
+  ## <NOTE>#218: does this loop body contain a `break expr`? Used to
+  ## reject value-loops in codegen until L.5c.
+  if n == nil: return false
+  case n.kind
+  of nkBreak: n.breakExpr != nil
+  of nkWhile: false
+  of nkBlock, nkProgram:
+    for s in n.stmts:
+      if hasBreakExpr(s): return true
+    false
+  of nkIf: hasBreakExpr(n.ifThen) or hasBreakExpr(n.ifElse)
+  else: false
+
 proc hasBreak(n: Node): bool =
+
   ## <NOTE>#137: does this loop body contain a `break` that targets
   ## the current loop? Nested `while` owns its own break, do not
   ## descend.
@@ -1045,8 +1060,12 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
 proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   # <NOTE>#139: while returns Bool. true if the loop exited via break,
   # false if the condition became false.
+  if hasBreakExpr(n.whileBody):
+    raise newException(ValueError,
+      "codegen: value while with break expr not implemented yet (L.5c)")
   let brk = hasBreak(n.whileBody)
   let condBB = LLVMCreateBasicBlockInContext(c.ctx, "while.cond")
+
   let bodyBB = LLVMCreateBasicBlockInContext(c.ctx, "while.body")
   let exitBB = LLVMCreateBasicBlockInContext(c.ctx, "while.exit")
   var breakBB: LLVMBasicBlockRef = nil

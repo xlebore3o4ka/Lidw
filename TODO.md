@@ -12,7 +12,17 @@ it graduates to `issues/` or to a design session.
   134). Decision depends on target audience: scripts/CI prefer
   `exit(1)`; debugging prefers `trap`. May be a `panic` kind
   (`panic` vs `abort`) or a build profile flag.
+- **`panic` exit strategy.** Today `panic()` lowers to `llvm.trap`
+  (SIGILL, exit 132 in shell). `lli` reports it as "please submit a
+  bug report" — confusing for users, but not a bug. Options:
+  (a) keep trap (precise `gdb` location, deterministic); (b) call
+  libc `exit(1)` (clean exit code, no core dump, still traceable
+  through !dbg but not as a signal); (c) `abort()` (SIGABRT, exit
+  134). Decision depends on target audience: scripts/CI prefer
+  `exit(1)`; debugging prefers `trap`. May be a `panic` kind
+  (`panic` vs `abort`) or a build profile flag.
 - **`s$` as reference alias, not a no-op mutability marker.** Today
+
 
   `Int b$ = a` is just an explicit-mutable declaration (`muMutable`,
   same as bare `Int b`); it allocates a fresh slot and copies. The

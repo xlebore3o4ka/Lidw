@@ -461,9 +461,26 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
     # an error (explicit `as`).
     let lk = n.left.typ.kind
     let rk = n.right.typ.kind
+
+    # <NOTE>#235: Str ==/!= Str -> Bool. Ordering not defined (yet).
+    if lk == tyStr or rk == tyStr:
+      if not (lk == tyStr and rk == tyStr):
+        raise lidwError(lekSema,
+          "operator " & opStr(n.op) & " requires Str operands, got " &
+          $n.left.typ & " and " & $n.right.typ, n.line, n.col)
+      if isOrdering(n.op):
+        raise lidwError(lekSema,
+          "operator " & opStr(n.op) & " is not defined for Str", n.line, n.col)
+      n.typ = boolType()
+      if v.ctx != nil and not fits(n.typ, v.ctx):
+        raise lidwError(lekSema,
+          "comparison result Bool does not fit " & $v.ctx, n.line, n.col)
+      return
+
     let lAnyFloat = isAnyFloat(lk)
     let rAnyFloat = isAnyFloat(rk)
     if lAnyFloat or rAnyFloat:
+
       # both must be float-family (ilLit adapts to float; concrete Int
       # + Float is an error)
       let lFloatFam = lAnyFloat or lk == tyILit

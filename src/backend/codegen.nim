@@ -568,9 +568,16 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
 
 
     of boEq, boNe, boLt, boLe, boGt, boGe:
+      # <NOTE>#235: Str comparisons not yet in codegen (S.3).
+      let lIsStr = n.left.typ != nil and n.left.typ.kind == tyStr
+      let rIsStr = n.right.typ != nil and n.right.typ.kind == tyStr
+      if lIsStr or rIsStr:
+        raise newException(ValueError,
+          "codegen: Str comparison not implemented yet (S.3)")
       # <NOTE>#43: comparisons operate on a common representation.
       let lIsBool = n.left.typ != nil and n.left.typ.kind == tyBool
       let rIsBool = n.right.typ != nil and n.right.typ.kind == tyBool
+
       if lIsBool or rIsBool:
         var lhs: LLVMValueRef
         var rhs: LLVMValueRef

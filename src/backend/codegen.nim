@@ -1276,19 +1276,43 @@ proc setLoc(c: var CodegenCtx, n: Node) =
   LLVMSetCurrentDebugLocation2(c.builder, loc)
 
 proc initTarget(llmod: LLVMModuleRef) =
-  # <NOTE>#171: LLVMCreateTargetData takes a *data layout* string, not
-  # a triple. Passing the triple here crashes ("unknown specifier 'x'"
-  # because 'x86_64...' is parsed as a layout). To get the layout from
-  # a target, we'd need LLVMGetTargetFromTriple + LLVMCreateTargetMachine
-  # + LLVMCreateTargetDataLayout; that's more bindings. For now hardcode
-  # the x86_64 layout (stable for LLVM 23) and use
-  # LLVMGetDefaultTargetTriple for the triple.
+  # <NOTE>#212: portable target setup. Resolve host triple, look up
+  # target, create TargetMachine (generic CPU, no features, O0,
+  # default reloc/code model), derive data layout from the machine,
+  # set both on the module. If the target is not compiled into
+  # libLLVM, raise with the LLVM error message instead of emitting a
+  # wrong layout.
   let triple = LLVMGetDefaultTargetTriple()
-  if triple != nil:
-    LLVMSetTarget(llmod, triple)
+  if triple == nil:
+    raise newException(ValueError,
+      "codegen: LLVMGetDefaultTargetTriple returned nil")
+  let tripleStr = $triple
+  LLVMSetTarget(llmod, triple)
+  var target: LLVMTargetRef = nil
+  var errMsg: cstring = nil
+  if LLVMGetTargetFromTriple(triple, addr target, addr errMsg) != 0:
+    let msg = if errMsg != nil: $errMsg else: "unknown"
+    if errMsg != nil: LLVMDisposeMessage(errMsg)
     LLVMDisposeMessage(triple)
-  LLVMSetDataLayout(llmod,
-    "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128".cstring)
+    raise newException(ValueError,
+      "codegen: target for " & tripleStr & " not built into LLVM: " & msg)
+  # LLVMCodeGenLevelNone=0, LLVMRelocDefault=0, LLVMCodeModelDefault=0.
+  let tm = LLVMCreateTargetMachine(target, triple,
+                                   "generic".cstring, "".cstring, 0, 0, 0)
+  if tm == nil:
+    LLVMDisposeMessage(triple)
+    raise newException(ValueError,
+      "codegen: LLVMCreateTargetMachine failed for " & tripleStr)
+  let td = LLVMCreateTargetDataLayout(tm)
+  if td != nil:
+    let layout = LLVMCopyStringRepOfTargetData(td)
+    if layout != nil:
+      LLVMSetDataLayout(llmod, layout)
+      LLVMDisposeMessage(layout)
+    LLVMDisposeTargetData(td)
+  LLVMDisposeTargetMachine(tm)
+  LLVMDisposeMessage(triple)
+
 
 
 proc initDI(c: var CodegenCtx, llmod: LLVMModuleRef) =
@@ -1346,14 +1370,27 @@ proc emitModule*(program: Node, sourceFile: string = "<expr>",
   ## <TODO>#39: temporary semantics — main returns the last value
   ## expression. Replace with real program semantics once `print`/side
   ## effects exist.
-  # <NOTE>#169: target must be initialized before LLVMCreateTargetData,
-  # otherwise the target/layout strings are garbage ("unknown
-  # specifier 'x'"). Native-init helpers are static-inline in the C
-  # header; call the concrete X86 initializers instead.
+  # <NOTE>#169: register host targets before LLVMGetTargetFromTriple.
+  # LLVMInitializeAllTargets is `static inline`; call per-family.
+  # <NOTE>#211: X86 / AArch64 / ARM / RISCV. Add more families here
+  # if "target X not built into LLVM" appears on another host.
   LLVMInitializeX86TargetInfo()
   LLVMInitializeX86Target()
   LLVMInitializeX86TargetMC()
   LLVMInitializeX86AsmPrinter()
+  LLVMInitializeAArch64TargetInfo()
+  LLVMInitializeAArch64Target()
+  LLVMInitializeAArch64TargetMC()
+  LLVMInitializeAArch64AsmPrinter()
+  LLVMInitializeARMTargetInfo()
+  LLVMInitializeARMTarget()
+  LLVMInitializeARMTargetMC()
+  LLVMInitializeARMAsmPrinter()
+  LLVMInitializeRISCVTargetInfo()
+  LLVMInitializeRISCVTarget()
+  LLVMInitializeRISCVTargetMC()
+  LLVMInitializeRISCVAsmPrinter()
+
 
   let ctx = LLVMContextCreate()
   defer: LLVMContextDispose(ctx)

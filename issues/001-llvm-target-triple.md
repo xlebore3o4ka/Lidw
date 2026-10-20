@@ -1,12 +1,22 @@
 # 001 — LLVM target triple and data layout are unset
 
-**Status:** resolved — `initTarget` in codegen sets target triple
-from `LLVMGetDefaultTargetTriple` and sets data layout from a
-hardcoded x86_64 string (matching `clang -print-target-triple` on
-this machine). `store i64` now emits `align 8` (was `align 4`),
-clang has no `-Woverride-module` warning. Portable detection needs
-`LLVMGetTargetFromTriple` + `LLVMCreateTargetMachine` +
-`LLVMCreateTargetDataLayout`, deferred.
+**Status:** resolved — `initTarget` uses the full portable path:
+
+1. Per-family `LLVMInitializeX86*` / `LLVMInitializeAArch64*` /
+   `LLVMInitializeARM*` / `LLVMInitializeRISCV*` at module start
+   (`LLVMInitializeAllTargets` is `static inline`, not exported).
+2. `LLVMGetDefaultTargetTriple` → `LLVMGetTargetFromTriple`.
+3. `LLVMCreateTargetMachine(target, triple, "generic", "", O0,
+   Default, Default)`.
+4. `LLVMCreateTargetDataLayout` → `LLVMCopyStringRepOfTargetData`
+   → `LLVMSetDataLayout`.
+
+No hardcoded x86_64 layout. `store i64` emits `align 8`, `clang` has
+no `-Woverride-module`. If the host target is not built into
+`libLLVM`, `initTarget` raises with the LLVM error message instead
+of emitting a wrong layout. To add another host family, register its
+`LLVMInitialize<Arch>*` group in `emitModule`.
+
 
 **Layer:** codegen
 **Related:** overflow checks, div-by-zero checks

@@ -235,7 +235,27 @@ suite "llvm-c bindings":
     check "store i64 1" in ir
     check "store i64 2" in ir
 
+  test "emitModule F64 decl alloca double":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", typ: f64Type(),
+           declInit: Node(kind: nkFloat, floatVal: 1.5, typ: fLitType(1.5)))
+    ])
+    let ir = emitModule(p, "<expr>", false)
+    check "alloca double" in ir
+    check "store double 1.5" in ir
+
+  test "emitModule iLit under F64 slot":
+    let p = Node(kind: nkProgram, stmts: @[
+      Node(kind: nkDecl, declName: "x", typ: f64Type(),
+           declInit: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))
+    ])
+    let ir = emitModule(p, "<expr>", false)
+    check "alloca double" in ir
+
+    check "store double 5" in ir
+
   test "emitModule is in block yields value":
+
     let p = Node(kind: nkProgram, stmts: @[
       Node(kind: nkDecl, declName: "x", typ: i64Type(),
            declInit: Node(kind: nkBlock, typ: i64Type(), stmts: @[

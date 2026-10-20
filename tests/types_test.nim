@@ -37,7 +37,25 @@ suite "types":
     check bitWidth(i64Type()) == 64
     check bitWidth(u64Type()) == 64
 
+  test "float type names":
+    check $f32Type() == "f32"
+    check $f64Type() == "f64"
+    check $fLitType(1.5) == "fLit(1.5)"
+
+  test "isFloatKind":
+    check isFloatKind(f32Type())
+    check isFloatKind(f64Type())
+    check not isFloatKind(i64Type())
+    check not isFloatKind(boolType())
+    check not isFloatKind(iLitType(0))
+    check not isFloatKind(fLitType(1.5))
+
+  test "float bit width":
+    check bitWidth(f32Type()) == 32
+    check bitWidth(f64Type()) == 64
+
   test "iLit does not report signedness or width":
+
     expect AssertionDefect:
       discard isSigned(iLitType(0))
     expect AssertionDefect:

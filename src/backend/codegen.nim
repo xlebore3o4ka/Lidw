@@ -894,18 +894,23 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
         initVal = LLVMConstReal(llvmTy, cdouble(0.0))
       else:
         initVal = LLVMConstInt(llvmTy, 0, 0)
+    elif slotIsFloat and (
+         (n.declInit.kind == nkInt) or
+         (n.declInit.typ != nil and n.declInit.typ.kind == tyILit)):
+      # <NOTE>#229: under a float slot, nkInt and iLit both become
+      # LLVMConstReal. Order matters: check slotIsFloat first, else
+      # LLVMConstInt(double, ...) produces "store i0".
+      let iv =
+        if n.declInit.kind == nkInt: n.declInit.intVal
+        else: n.declInit.typ.value
+      initVal = LLVMConstReal(llvmTy, cdouble(float(iv)))
     elif n.declInit.kind == nkInt:
       initVal = LLVMConstInt(llvmTy,
         cast[culonglong](n.declInit.intVal), 0)
     elif n.declInit.typ != nil and n.declInit.typ.kind == tyILit:
-      # <NOTE>#65: sema-folded literal (nkUnary(-int), folded nkBinOp)
-      # carries its final value in typ as iLit(N). Emit at slot width.
-      if slotIsFloat:
-        initVal = LLVMConstReal(llvmTy,
-          cdouble(float(n.declInit.typ.value)))
-      else:
-        initVal = LLVMConstInt(llvmTy,
-          cast[culonglong](n.declInit.typ.value), 0)
+      initVal = LLVMConstInt(llvmTy,
+        cast[culonglong](n.declInit.typ.value), 0)
+
     elif n.declInit.typ != nil and n.declInit.typ.kind == tyFLit:
       # <NOTE>#206: fLit init under concrete Float slot.
       initVal = LLVMConstReal(llvmTy, cdouble(n.declInit.typ.fValue))
@@ -1591,6 +1596,12 @@ proc emitModule*(program: Node, sourceFile: string = "<expr>",
         retVal = LLVMBuildSExt(builder, retVal, i64, "ret_sext")
       else:
         retVal = LLVMBuildZExt(builder, retVal, i64, "ret_zext")
+    elif retType.kind in FloatKinds:
+      # <NOTE>#228: main returns i64; a float-typed last expression is
+      # truncated toward zero (fptosi). For `lidw build` this is debug
+      # convenience, not language semantics; `print` is the real API.
+      retVal = LLVMBuildFPToSI(builder, retVal, i64, "ret_fptosi")
+
   # <NOTE>#160: setLoc BEFORE the final ret so the ret has main's
   # scope, not the last fn emitted by pass 2 (which left a stale
   # current debug location on the builder).

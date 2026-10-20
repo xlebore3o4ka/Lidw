@@ -503,7 +503,100 @@ suite "sema":
     check n.stmts[1].typ.kind == tyBool
 
 
+  test "fLit without ctx stays fLit":
+    let n = sema("1.5")
+    check n.stmts[0].typ.kind == tyFLit
+    check n.stmts[0].typ.fValue == 1.5
+
+  test "fLit under F64 stays fLit":
+    let n = sema("F64 x = 1.5")
+    check n.stmts[0].typ.kind == tyF64
+    check n.stmts[0].declInit.typ.kind == tyFLit
+
+  test "fLit under F32 stays fLit":
+    let n = sema("F32 x = 1.5")
+    check n.stmts[0].typ.kind == tyF32
+    check n.stmts[0].declInit.typ.kind == tyFLit
+
+  test "Float alias is F64":
+    let n = sema("Float x = 1.5")
+    check n.stmts[0].typ.kind == tyF64
+
+  test "fLit under Int rejected":
+    check expectSema("Int x = 1.5") == lekSema
+
+  test "fLit under Bool rejected":
+    check expectSema("Bool b = 1.5") == lekSema
+
+  test "fLit + fLit folds":
+    let n = sema("1.5 + 2.5")
+    check n.stmts[0].typ.kind == tyFLit
+    check n.stmts[0].typ.fValue == 4.0
+
+  test "fLit + iLit folds to fLit":
+    let n = sema("1.5 + 2")
+    check n.stmts[0].typ.kind == tyFLit
+    check n.stmts[0].typ.fValue == 3.5
+
+  test "iLit + fLit folds to fLit":
+    let n = sema("2 + 1.5")
+    check n.stmts[0].typ.kind == tyFLit
+    check n.stmts[0].typ.fValue == 3.5
+
+  test "F64 + iLit -> F64":
+    let n = sema("F64 x = 1.5 x + 2")
+    check n.stmts[1].typ.kind == tyF64
+
+  test "F64 + fLit -> F64":
+    let n = sema("F64 x = 1.5 x + 2.5")
+    check n.stmts[1].typ.kind == tyF64
+
+  test "F32 + F32 -> F32":
+    let n = sema("F32 a = 1.5 F32 b = 2.5 a + b")
+    check n.stmts[2].typ.kind == tyF32
+
+  test "F32 + F64 -> F64":
+    let n = sema("F32 a = 1.5 F64 b = 2.5 a + b")
+    check n.stmts[2].typ.kind == tyF64
+
+  test "Int + F64 rejected":
+    check expectSema("Int a = 1 F64 b = 2.5 a + b") == lekSema
+
+  test "Float % rejected":
+    check expectSema("F64 a = 5.0 F64 b = 2.0 a % b") == lekSema
+
+  test "F64 < F64 = Bool":
+    let n = sema("F64 a = 1.5 F64 b = 2.5 a < b")
+    check n.stmts[2].typ.kind == tyBool
+
+  test "inf + inf folds to inf":
+    let n = sema("inf + inf")
+    check n.stmts[0].typ.kind == tyFLit
+    check n.stmts[0].typ.fValue == Inf
+
+  test "unary minus on fLit":
+    let n = sema("-1.5")
+    check n.stmts[0].typ.kind == tyFLit
+    check n.stmts[0].typ.fValue == -1.5
+
+  test "cast Int to F64":
+    let n = sema("Int x = 5 F64 y = x as F64")
+    check n.stmts[1].typ.kind == tyF64
+    check n.stmts[1].declInit.kind == nkCast
+
+  test "cast F64 to Int":
+    let n = sema("F64 x = 1.5 Int y = x as Int")
+    check n.stmts[1].typ.kind == tyI64
+
+  test "cast Bool to F64 rejected":
+    check expectSema("F64 x = (1 < 2) as F64") == lekSema
+
+  test "cast F32 to F64":
+    let n = sema("F32 a = 1.5 F64 b = a as F64")
+    check n.stmts[1].typ.kind == tyF64
+
   test "cast Int to Int":
+
 
     let n = sema("Int x = 5 Int y = x as Int")
     check n.stmts[1].declInit.kind == nkCast

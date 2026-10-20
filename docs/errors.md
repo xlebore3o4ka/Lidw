@@ -124,7 +124,19 @@ or drop the leading `discard` if you actually want the value.
 - `if branch yields <type>, expected <type>` — under declaration
   context, one branch does not fit `ctx`.
 
+### Floats
+
+- `float literal <v> does not fit <type>` — `F32 x = 1e40` (out of
+  F32 range; currently the lexer only handles `digits.digits`, so
+  this requires `1.0 * 1e40` which is not lexable yet).
+- `operator % is not defined for Float` — `1.5 % 0.5`.
+- `cannot cast Bool to <Float type>` — `Bool -> Float` needs
+  `as Int` first.
+- `arithmetic requires matching kinds: <t> and <t>` — Int + Float
+  without an explicit `as`.
+
 ### Operators
+
 
 - `cannot unify <lt> and <rt> for <op>` — binary operator with
   incompatible operand types.

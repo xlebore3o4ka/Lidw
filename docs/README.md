@@ -45,6 +45,8 @@ marked *ok* because there is nothing for them to do.
 - [types.md](types.md) — type system
 - [declarations.md](declarations.md) — variables, mutability
 - [expressions.md](expressions.md) — operators, if, is
+- [floats.md](floats.md) — F32/F64, literals, casts, mixing with Int
+
 - [overflow.md](overflow.md) — panic, checked arithmetic
 
 - [overflow.md](overflow.md) — panic, checked arithmetic

@@ -62,7 +62,18 @@ Int x = (1 2)        -- sema error: block has no value, expected i64
 (1 2) + 1            -- sema error: cannot unify nul and iLit(1)
 ```
 
+## Float types
+
+`F32` (single precision) and `F64` (double precision). `Float` is
+an alias for `F64`. Literals have type `fLit(v)`, adapting to the
+nearest concrete Float context (see [floats.md](floats.md)).
+
+`fLit` does not fit any Int kind or `Bool`. `iLit` fits `F32`/`F64`
+if representable. `F32` does not fit `F64` implicitly (needs `as`,
+which lowers to `fpext`).
+
 ## The literal type `iLit(N)`
+
 
 An integer literal in source does not have a concrete type yet. It
 carries its value and fits into any concrete type whose range

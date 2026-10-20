@@ -64,6 +64,12 @@ Operand rules (context-less):
 unsigned kinds, `+ - *` wrap silently; `/ %` still check for zero.
 See [overflow.md](overflow.md).
 
+**Floats.** `+ - * /` on `F32`/`F64` follow IEEE 754: overflow
+becomes `Inf`, `0.0/0.0` is `NaN`. No panic. `%` is not defined on
+Float. Int and Float do not mix implicitly; use `as`. See
+[floats.md](floats.md).
+
+
 
 **Runtime checks.** On signed integer kinds (`i8/i16/i32/i64`),
 `+ - *` check for overflow and call `panic` on overflow. `/` and

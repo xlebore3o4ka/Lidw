@@ -13,7 +13,22 @@ import ../types
 import ./llvm_c
 
 type
+  # <NOTE>#219: per-loop bookkeeping. `breakBB` collects every `break`
+  # for the current loop; for value loops it carries a phi of the
+  # break values, for Bool loops it just `br exit` with `true`.
+  LoopBreak = tuple[val: LLVMValueRef, bb: LLVMBasicBlockRef]
+
+  LoopFrame = object
+    breakBB: LLVMBasicBlockRef  ## nil if the loop has no breaks
+    exitBB: LLVMBasicBlockRef
+    continueBB: LLVMBasicBlockRef
+    isValueLoop: bool
+    valueLLVMType: LLVMTypeRef
+    defaultValue: LLVMValueRef
+    breakIncoming: seq[LoopBreak]
+
   CodegenCtx = object
+
     ctx: LLVMContextRef
     module: LLVMModuleRef
     builder: LLVMBuilderRef
@@ -33,11 +48,10 @@ type
     # <NOTE>#183: cache for llvm.<op>.with.overflow.<iN> declarations.
     intrinsics: Table[string, tuple[fn: LLVMValueRef, fnTy: LLVMTypeRef]]
 
-    loopExits: seq[LLVMBasicBlockRef]
-      ## <NOTE>#133: innermost last. `break` emits `br` to loopExits[^1].
-    loopContinues: seq[LLVMBasicBlockRef]
-      ## <NOTE>#140: innermost last. `continue` emits `br` to
-      ## loopContinues[^1] (the condition block).
+    # <NOTE>#219: innermost last. Replaces loopExits/loopContinues
+    # with a per-loop frame that carries value-loop state.
+    loopStack: seq[LoopFrame]
+
 
     # <NOTE>#148: DI is set up in D.1a (DIFile + DICompileUnit). D.1b
     # will add DILocations on instructions, D.1c DISubprograms, D.1d
@@ -184,7 +198,18 @@ proc llvmFloatType(c: CodegenCtx, kind: TypeKind): LLVMTypeRef =
     raise newException(AssertionDefect,
       "llvmFloatType: not a float kind: " & $kind)
 
+proc defaultValueOf(c: CodegenCtx, kind: TypeKind): LLVMValueRef =
+  # <NOTE>#220: default value for a value-loop's cond-false fallthrough
+  # and for bare `break` in a value loop.
+  if kind in FloatKinds:
+    LLVMConstReal(llvmFloatType(c, kind), cdouble(0.0))
+  elif kind == tyBool:
+    LLVMConstInt(c.i1, 0, 0)
+  else:
+    LLVMConstInt(llvmIntType(c, kind), 0, 0)
+
 proc llvmTypeOf(c: CodegenCtx, kind: TypeKind): LLVMTypeRef =
+
   ## <NOTE>#205: unified: Float kinds -> llvmFloatType, everything
   ## else (Int, Bool, tyILit-as-i64 fallback) -> llvmIntType. Use this
   ## in alloca/store/load for declarations; callers that need strict
@@ -464,8 +489,10 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   setLoc(c, n)
   case n.kind
   of nkFloat:
-    raise newException(ValueError,
-      "codegen: float literal not implemented yet (F.5)")
+    # <NOTE>#221: direct nkFloat in expression position (e.g. `break
+    # 1.5`). Emit as f64; caller coerces via coerceInt/emitOperand.
+    return LLVMConstReal(llvmFloatType(c, tyF64), cdouble(n.floatVal))
+
   of nkInt:
     LLVMConstInt(c.i64, cast[culonglong](n.intVal), 0)
 
@@ -1016,17 +1043,33 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
     return emitWhileExpr(c, n)
 
   of nkBreak:
-    if c.loopExits.len == 0:
+    if c.loopStack.len == 0:
       raise newException(ValueError,
         "codegen: break outside loop (sema should reject)")
-    discard LLVMBuildBr(c.builder, c.loopExits[^1])
+    let frame = addr c.loopStack[^1]
+    if frame.isValueLoop:
+      # <NOTE>#222: compute break value (or default for bare break),
+      # record it for the exit phi.
+      var v: LLVMValueRef
+      if n.breakExpr != nil:
+        v = emitExpr(c, n.breakExpr)
+      else:
+        v = frame.defaultValue
+      frame.breakIncoming.add (v, LLVMGetInsertBlock(c.builder))
+    if frame.breakBB == nil:
+      # Bare Bool loop break — no breakBB (should not happen; hasBreak
+      # implies breakBB is set). Defensive fallback to exit.
+      discard LLVMBuildBr(c.builder, frame.exitBB)
+    else:
+      discard LLVMBuildBr(c.builder, frame.breakBB)
     nil
   of nkContinue:
-    if c.loopContinues.len == 0:
+    if c.loopStack.len == 0:
       raise newException(ValueError,
         "codegen: continue outside loop (sema should reject)")
-    discard LLVMBuildBr(c.builder, c.loopContinues[^1])
+    discard LLVMBuildBr(c.builder, c.loopStack[^1].continueBB)
     nil
+
   of nkDiscard:
     # <NOTE>#143: discard evaluates expr for effect and returns nil.
     if n.discardExpr != nil:
@@ -1058,14 +1101,13 @@ proc emitStmt(c: var CodegenCtx, n: Node): LLVMValueRef =
 
 
 proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
-  # <NOTE>#139: while returns Bool. true if the loop exited via break,
-  # false if the condition became false.
-  if hasBreakExpr(n.whileBody):
-    raise newException(ValueError,
-      "codegen: value while with break expr not implemented yet (L.5c)")
+  # <NOTE>#139: while with no `break expr` returns Bool (true=break,
+  # false=cond-false). With at least one `break expr` it is a value
+  # loop: exit phi returns the break value (or default for bare break
+  # / cond-false).
+  let isValueLoop = hasBreakExpr(n.whileBody)
   let brk = hasBreak(n.whileBody)
   let condBB = LLVMCreateBasicBlockInContext(c.ctx, "while.cond")
-
   let bodyBB = LLVMCreateBasicBlockInContext(c.ctx, "while.body")
   let exitBB = LLVMCreateBasicBlockInContext(c.ctx, "while.exit")
   var breakBB: LLVMBasicBlockRef = nil
@@ -1076,6 +1118,17 @@ proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   if brk:
     LLVMAppendExistingBasicBlock(c.mainFn, breakBB)
   LLVMAppendExistingBasicBlock(c.mainFn, exitBB)
+
+  var frame = LoopFrame(
+    breakBB: breakBB, exitBB: exitBB, continueBB: condBB,
+    isValueLoop: isValueLoop, breakIncoming: @[])
+  if isValueLoop:
+    # <NOTE>#223: sema guarantees n.typ is the concrete value type.
+    let kind = nodeKindOr(n, tyI64)
+    frame.valueLLVMType = llvmTypeOf(c, kind)
+    frame.defaultValue = defaultValueOf(c, kind)
+  c.loopStack.add frame
+
   discard LLVMBuildBr(c.builder, condBB)
   LLVMPositionBuilderAtEnd(c.builder, condBB)
   var cond = emitExpr(c, n.whileCond)
@@ -1083,23 +1136,56 @@ proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   if not condIsBool:
     cond = toBool(c, cond)
   discard LLVMBuildCondBr(c.builder, cond, bodyBB, exitBB)
-  c.loopExits.add(if brk: breakBB else: exitBB)
-  c.loopContinues.add condBB
   LLVMPositionBuilderAtEnd(c.builder, bodyBB)
   discard emitStmt(c, n.whileBody)
-  c.loopContinues.setLen(c.loopContinues.len - 1)
-  c.loopExits.setLen(c.loopExits.len - 1)
 
-  # <NOTE>#179: blockTerminated covers panic in the body, which is
-  # not visible to isTerminal.
+  # <NOTE>#227: `frame` is a local copy; emitStmt(nkBreak) mutates
+  # `c.loopStack[^1].breakIncoming`. Copy back so phi gets its values.
+  frame = c.loopStack[^1]
+
   if not blockTerminated(c) and not isTerminal(n.whileBody):
     discard LLVMBuildBr(c.builder, condBB)
 
+
+  var brkPhi: LLVMValueRef = nil
+
   if brk:
     LLVMPositionBuilderAtEnd(c.builder, breakBB)
-    discard LLVMBuildBr(c.builder, exitBB)
+    if isValueLoop:
+      # <NOTE>#224: phi at breakBB, one incoming per break site.
+      brkPhi = LLVMBuildPhi(c.builder, frame.valueLLVMType, "while.brk")
+      let nInc = frame.breakIncoming.len
+      if nInc > 0:
+        var vals = newSeq[LLVMValueRef](nInc)
+        var blks = newSeq[LLVMBasicBlockRef](nInc)
+        for i, pair in frame.breakIncoming:
+          vals[i] = pair.val
+          blks[i] = pair.bb
+
+        LLVMAddIncoming(brkPhi, addr vals[0], addr blks[0], cuint(nInc))
+      discard LLVMBuildBr(c.builder, exitBB)
+    else:
+      discard LLVMBuildBr(c.builder, exitBB)
+
   LLVMPositionBuilderAtEnd(c.builder, exitBB)
-  if brk:
+
+  # Pop frame before emitting phi (breakIncoming already consumed).
+  c.loopStack.setLen(c.loopStack.len - 1)
+
+  if isValueLoop:
+    # <NOTE>#225: exit phi: [default from cond], [brkPhi from breakBB].
+    let exitPhi = LLVMBuildPhi(c.builder, frame.valueLLVMType, "while.result")
+    var vals: array[2, LLVMValueRef]
+    var blks: array[2, LLVMBasicBlockRef]
+    vals[0] = frame.defaultValue; blks[0] = condBB
+    if brk:
+      vals[1] = brkPhi; blks[1] = breakBB
+      LLVMAddIncoming(exitPhi, addr vals[0], addr blks[0], 2)
+    else:
+      LLVMAddIncoming(exitPhi, addr vals[0], addr blks[0], 1)
+    exitPhi
+
+  elif brk:
     let phi = LLVMBuildPhi(c.builder, c.i1, "while.result")
     var vals: array[2, LLVMValueRef]
     var blks: array[2, LLVMBasicBlockRef]
@@ -1109,6 +1195,7 @@ proc emitWhileExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
     phi
   else:
     LLVMConstInt(c.i1, 0, 0)
+
 
 proc fnLLVMType(c: CodegenCtx, fnT: LidwType): LLVMTypeRef =
 

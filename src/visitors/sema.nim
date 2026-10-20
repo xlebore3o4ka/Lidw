@@ -334,7 +334,101 @@ proc unifyInts(a, b: LidwType, line, col: int): LidwType =
       "arithmetic requires Int, got " & $a & " and " & $b, line, col)
   intType(promoteIntKinds(a.kind, b.kind, line, col))
 
+proc foldFloat(op: BinOp, a, b: float): float =
+  # <NOTE>#197: no panic for float fold; IEEE Inf/NaN propagate.
+  case op
+  of boAdd: a + b
+  of boSub: a - b
+  of boMul: a * b
+  of boDiv: a / b
+  else:
+    raise newException(AssertionDefect,
+      "foldFloat: not an arithmetic op: " & opStr(op))
+
+proc promoteFloat(a, b: LidwType): LidwType =
+  # <NOTE>#198: F32 + F32 -> F32; anything with F64 -> F64.
+  if a.kind == tyF64 or b.kind == tyF64: f64Type()
+  else: f32Type()
+
+proc isFloatLit(k: TypeKind): bool = k == tyFLit
+proc isAnyFloat(k: TypeKind): bool = k in FloatKinds or k == tyFLit
+
+proc unifyArith(l, r: LidwType, op: BinOp, line, col: int): LidwType =
+  ## <NOTE>#199: arithmetic unify. iLit adapts to either concrete Int
+  ## or concrete Float; fLit adapts to Float only; concrete Int+Float
+  ## is error (needs `as`); Float+Float promotes by width.
+  let lILit = l.kind == tyILit
+  let rILit = r.kind == tyILit
+  let lFLit = l.kind == tyFLit
+  let rFLit = r.kind == tyFLit
+  let lIsInt = l.kind in IntKinds
+  let rIsInt = r.kind in IntKinds
+  let lIsFloat = l.kind in FloatKinds
+  let rIsFloat = r.kind in FloatKinds
+
+  # Both literals: fold.
+  if (lILit or lFLit) and (rILit or rFLit):
+    if lILit and rILit:
+      return iLitType(foldInt(op, l.value, r.value, line, col))
+    let lv = if lILit: float(l.value) else: l.fValue
+    let rv = if rILit: float(r.value) else: r.fValue
+    return fLitType(foldFloat(op, lv, rv))
+
+  # iLit adapts to the other concrete side (Int or Float).
+  if lILit:
+    if rIsInt:
+      return unifyInts(l, r, line, col)
+    if rIsFloat:
+      if not fits(l, r):
+        raise lidwError(lekSema,
+          "literal " & $l & " does not fit " & $r, line, col)
+      return r
+    raise lidwError(lekSema,
+      "arithmetic requires Int or Float, got " & $l & " and " & $r, line, col)
+  if rILit:
+    if lIsInt:
+      return unifyInts(l, r, line, col)
+    if lIsFloat:
+      if not fits(r, l):
+        raise lidwError(lekSema,
+          "literal " & $r & " does not fit " & $l, line, col)
+      return l
+    raise lidwError(lekSema,
+      "arithmetic requires Int or Float, got " & $l & " and " & $r, line, col)
+
+  # fLit adapts to Float only.
+  if lFLit:
+    if rIsFloat:
+      if not fits(l, r):
+        raise lidwError(lekSema,
+          "float literal " & $l & " does not fit " & $r, line, col)
+      return r
+    raise lidwError(lekSema,
+      "float literal cannot mix with Int (use `as`): " & $l & " and " & $r,
+      line, col)
+  if rFLit:
+    if lIsFloat:
+      if not fits(r, l):
+        raise lidwError(lekSema,
+          "float literal " & $r & " does not fit " & $l, line, col)
+      return l
+    raise lidwError(lekSema,
+      "float literal cannot mix with Int (use `as`): " & $l & " and " & $r,
+      line, col)
+
+  # Both concrete.
+  if lIsInt and rIsInt:
+    return unifyInts(l, r, line, col)
+  if lIsFloat and rIsFloat:
+    return promoteFloat(l, r)
+
+  raise lidwError(lekSema,
+    "arithmetic requires matching kinds: " & $l & " and " & $r &
+    " (Int and Float need explicit `as`)", line, col)
+
+
 proc visitBinOp*(v: var SemaVisitor, n: Node) =
+
   # <NOTE>#60: operands are visited without ctx; the operator decides
   # the common type, then the result is checked against ctx.
   let saveCtx = v.ctx
@@ -346,8 +440,38 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
   if isComparison(n.op):
     # <NOTE>#26: comparisons produce Bool. Equality accepts Int/Int,
     # Int/iLit, Bool/Bool, Bool/iLit. Ordering accepts Int/iLit only.
+    # <NOTE>#200: Float comparisons follow the same shape as Int:
+    # Float/Float, Float/iLit, Float/fLit, fLit/fLit. Int + Float is
+    # an error (explicit `as`).
     let lk = n.left.typ.kind
     let rk = n.right.typ.kind
+    let lAnyFloat = isAnyFloat(lk)
+    let rAnyFloat = isAnyFloat(rk)
+    if lAnyFloat or rAnyFloat:
+      # both must be float-family (ilLit adapts to float; concrete Int
+      # + Float is an error)
+      let lFloatFam = lAnyFloat or lk == tyILit
+      let rFloatFam = rAnyFloat or rk == tyILit
+      if not (lFloatFam and rFloatFam):
+        raise lidwError(lekSema,
+          "operator " & opStr(n.op) & " requires matching kinds: " &
+          $n.left.typ & " and " & $n.right.typ &
+          " (Int and Float need explicit `as`)", n.line, n.col)
+      # validate representability: iLit/fLit against concrete Float
+      if lk in FloatKinds and rk in {tyILit, tyFLit} and not fits(n.right.typ, n.left.typ):
+        raise lidwError(lekSema,
+          "literal " & $n.right.typ & " does not fit " & $n.left.typ,
+          n.line, n.col)
+      if rk in FloatKinds and lk in {tyILit, tyFLit} and not fits(n.left.typ, n.right.typ):
+        raise lidwError(lekSema,
+          "literal " & $n.left.typ & " does not fit " & $n.right.typ,
+          n.line, n.col)
+      n.typ = boolType()
+      if v.ctx != nil and not fits(n.typ, v.ctx):
+        raise lidwError(lekSema,
+          "comparison result Bool does not fit " & $v.ctx, n.line, n.col)
+      return
+
     let lIsBool = lk == tyBool
     let rIsBool = rk == tyBool
     if lIsBool or rIsBool:
@@ -377,24 +501,17 @@ proc visitBinOp*(v: var SemaVisitor, n: Node) =
         "comparison result Bool does not fit " & $v.ctx, n.line, n.col)
     return
 
-  # Arithmetic: + - * / %
-  let bothLit = n.left.typ.kind == tyILit and n.right.typ.kind == tyILit
-  if bothLit:
-    # <NOTE>#12: literals fold regardless of context; ctx only checks
-    # that the folded value fits.
-    let res = foldInt(n.op, n.left.typ.value, n.right.typ.value, n.line, n.col)
-    let lt = iLitType(res)
-    if v.ctx != nil and not fits(lt, v.ctx):
-      raise lidwError(lekSema,
-        "literal " & $lt & " does not fit " & $v.ctx, n.line, n.col)
-    n.typ = lt
-  else:
-    let unified = unifyInts(n.left.typ, n.right.typ, n.line, n.col)
-    if v.ctx != nil and not fits(unified, v.ctx):
-      raise lidwError(lekSema,
-        "expression type " & $unified & " does not fit " & $v.ctx,
-        n.line, n.col)
-    n.typ = unified
+  # Arithmetic: + - * / % (float: + - * / only)
+  if n.op == boMod and (isAnyFloat(n.left.typ.kind) or isAnyFloat(n.right.typ.kind)):
+    raise lidwError(lekSema,
+      "operator % is not defined for Float", n.line, n.col)
+  let unified = unifyArith(n.left.typ, n.right.typ, n.op, n.line, n.col)
+  if v.ctx != nil and not fits(unified, v.ctx):
+    raise lidwError(lekSema,
+      "expression type " & $unified & " does not fit " & $v.ctx,
+      n.line, n.col)
+  n.typ = unified
+
 
 proc visitProgram*(v: var SemaVisitor, n: Node) =
   # <NOTE>#33: program root is NOT a block for 'is'; a top-level nkIs

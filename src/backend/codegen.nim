@@ -185,9 +185,13 @@ proc llvmIntType(c: CodegenCtx, kind: TypeKind): LLVMTypeRef =
   of tyI32, tyU32: LLVMIntTypeInContext(c.ctx, 32)
   of tyI64, tyU64: c.i64
   of tyBool:       c.i1
+  of tyF32, tyF64, tyFLit:
+    raise newException(ValueError,
+      "codegen: float type not implemented yet (F.5)")
   else:
     raise newException(AssertionDefect,
       "llvmIntType: not an int kind: " & $kind)
+
 
 proc toBool(c: var CodegenCtx, v: LLVMValueRef): LLVMValueRef =
   ## Convert i64 value to i1 (non-zero = true).
@@ -425,8 +429,12 @@ proc emitExpr(c: var CodegenCtx, n: Node): LLVMValueRef =
   # from. Set at entry; recursive calls reset for their own nodes.
   setLoc(c, n)
   case n.kind
+  of nkFloat:
+    raise newException(ValueError,
+      "codegen: float literal not implemented yet (F.5)")
   of nkInt:
     LLVMConstInt(c.i64, cast[culonglong](n.intVal), 0)
+
 
   of nkUnary:
     case n.unop

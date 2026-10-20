@@ -235,7 +235,20 @@ suite "llvm-c bindings":
     check "store i64 1" in ir
     check "store i64 2" in ir
 
+  test "emitModule value loop with break expr has phi":
+    # Int x = while 1 break 5  -> while.brk phi i64 + while.result phi i64
+    let decl = Node(kind: nkDecl, declName: "x", typ: i64Type(),
+                    declInit: Node(kind: nkWhile, typ: i64Type(),
+                      whileCond: Node(kind: nkInt, intVal: 1, typ: iLitType(1)),
+                      whileBody: Node(kind: nkBreak, typ: iLitType(5),
+                        breakExpr: Node(kind: nkInt, intVal: 5, typ: iLitType(5)))))
+    let p = Node(kind: nkProgram, stmts: @[decl])
+    let ir = emitModule(p, "<expr>", false)
+    check "while.brk = phi i64" in ir
+    check "while.result = phi i64" in ir
+
   test "emitModule F64 decl alloca double":
+
     let p = Node(kind: nkProgram, stmts: @[
       Node(kind: nkDecl, declName: "x", typ: f64Type(),
            declInit: Node(kind: nkFloat, floatVal: 1.5, typ: fLitType(1.5)))

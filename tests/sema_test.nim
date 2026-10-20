@@ -449,7 +449,48 @@ suite "sema":
     except LidwError as e:
       check "unreachable statement after continue" in e.msg
 
+  test "break expr without ctx rejected":
+    try:
+      discard sema("while 1 break 5")
+      check false
+    except LidwError as e:
+      check e.kind == lekSema
+      check "value `while` (with `break expr`) needs a context" in e.msg
+
+  test "break expr under Int ctx":
+    let n = sema("Int x = while 1 break 5")
+    check n.stmts[0].kind == nkDecl
+    check n.stmts[0].declInit.kind == nkWhile
+    check n.stmts[0].declInit.typ.kind == tyI64
+
+  test "break expr under F64 ctx":
+    let n = sema("F64 x = while 1 break 1.5")
+    check n.stmts[0].declInit.typ.kind == tyF64
+
+  test "break expr wrong type under ctx":
+    check expectSema("Int x = while 1 break 1.5") == lekSema
+
+  test "break value has type error message":
+    try:
+      discard sema("Int x = while 1 break 1.5")
+      check false
+    except LidwError as e:
+      check "break value has type" in e.msg
+
+  test "two break exprs under ctx":
+    let n = sema("Int x = while 1 (if 1 break 5; break 7)")
+    check n.stmts[0].declInit.typ.kind == tyI64
+
+  test "mixed bare/expr under ctx":
+    let n = sema("Int x = while 1 (if 1 break; break 5)")
+    check n.stmts[0].declInit.typ.kind == tyI64
+
+  test "bare break still Bool":
+    let n = sema("while 1 break")
+    check n.stmts[0].typ.kind == tyBool
+
   test "break outside loop rejected":
+
 
     check expectSema("break") == lekSema
 
